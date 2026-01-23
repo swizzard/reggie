@@ -4,7 +4,7 @@ use pest::iterators::Pair;
 use reggie::*;
 
 pub fn main() {
-    let res = parser::PCRE2Parser::parse(parser::Rule::component, r"[a-d]{5,9}?")
+    let res = parser::PyRegexParser::parse(parser::Rule::component, r"[a-d]{5,9}?")
         .unwrap()
         .next()
         .unwrap();

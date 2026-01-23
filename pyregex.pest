@@ -1,3 +1,4 @@
+// Python regex grammar
 // ASCII only for now
 backslash = { "\\" }
 caret = { "^" }
