@@ -30,6 +30,7 @@ for what i hope are obvious reasons the mvp is ascii-only.
     - [ ] atomic
     - [ ] positive/negative lookahead/-behind
     - [ ] ternary
+  - [ ] different rules for verbose mode
 - [ ] functionality
   - [ ] `(&self..._with_...-> Self` methods in addition to `&mut self`
   - [ ] regex as a whole

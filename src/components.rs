@@ -1,6 +1,35 @@
 use crate::parser::Rule;
 use disjoint_ranges::{DisjointRange, UnaryRange};
 use pest::iterators::{Pair, Pairs};
+use std::collections::HashSet;
+
+#[derive(Clone, Debug)]
+pub struct Pattern {
+    flags: Flags,
+    components: Vec<Component>,
+}
+
+impl Pattern {
+    pub fn from_pair(pair: Pair<Rule>) -> Self {
+        let mut inner = pair.into_inner();
+        let mut flags = Flags::new();
+        let mut components = Vec::new();
+        while let Some(matched) = inner.next() {
+            match matched.as_rule() {
+                Rule::component => components.push(Component::from_pair(matched)),
+                Rule::whole_pattern_flag => {
+                    let mut parsed_flags = Flags::from_whole_pattern_pair(matched);
+                    std::mem::swap(&mut flags, &mut parsed_flags);
+                }
+                other => {
+                    println!("actually {:?}", other);
+                    unreachable!()
+                }
+            }
+        }
+        Self { flags, components }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Component {
@@ -373,5 +402,82 @@ impl Quantifier {
     }
     fn set_greed(&mut self, greed: G) {
         self.greed = greed;
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Flag {
+    Ascii,
+    Ignorecase,
+    Locale,
+    Multiline,
+    Dotall,
+    Unicode,
+    Verbose,
+}
+
+impl Flag {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Flag::Ascii => "a",
+            Flag::Ignorecase => "i",
+            Flag::Locale => "L",
+            Flag::Multiline => "m",
+            Flag::Dotall => "s",
+            Flag::Unicode => "u",
+            Flag::Verbose => "x",
+        }
+    }
+    pub fn from_char(c: char) -> Self {
+        match c {
+            'a' => Self::Ascii,
+            'i' => Self::Ignorecase,
+            'L' => Self::Locale,
+            'm' => Self::Multiline,
+            's' => Self::Dotall,
+            'u' => Self::Unicode,
+            'x' => Self::Verbose,
+            _ => unreachable!(),
+        }
+    }
+    pub fn as_string(&self) -> String {
+        String::from(self.as_str())
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Flags(HashSet<Flag>);
+
+impl Flags {
+    pub fn new() -> Self {
+        Self(HashSet::new())
+    }
+    pub fn add(&mut self, flag: Flag) {
+        self.0.insert(flag);
+    }
+    pub fn remove(&mut self, flag: &Flag) {
+        self.0.remove(flag);
+    }
+    pub fn as_string(&self) -> String {
+        let mut s = String::from("?");
+        for flag in self.0.iter() {
+            s.push_str(flag.as_str())
+        }
+        s
+    }
+    pub fn from_whole_pattern_pair(pair: Pair<Rule>) -> Self {
+        let mut inner = pair.into_inner();
+        inner.next(); // (?
+        let flag_match = inner.next().unwrap();
+        if flag_match.as_rule() == Rule::flags {
+            let mut flags = Flags::new();
+            for c in flag_match.as_str().chars() {
+                flags.add(Flag::from_char(c));
+            }
+            flags
+        } else {
+            println!("actually {:?}", flag_match.as_rule());
+            unreachable!()
+        }
     }
 }

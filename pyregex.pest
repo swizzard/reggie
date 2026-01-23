@@ -47,5 +47,14 @@ char_range = { range_bound ~ hyphen ~ range_bound }
 non_literal = _{ l_sq | r_sq | l_parens | r_parens | l_brace | r_brace | pipe }
 literals = { !non_literal ~ literal+ }
 
-component = { (literals | char_set) ~ quantifier? }
-regex = { component+ }
+backref = @{ backslash ~ ASCII_DIGIT+ }
+
+exclusive_flag = _{ "a" | "L" | "u" }
+negatable_flag = _{ "i" | "m" | "s" | "x" }
+any_flag = _{ exclusive_flag | negatable_flag }
+flags = { any_flag+ }
+wpf_open = @{ l_parens ~ question_mark }
+whole_pattern_flag = { wpf_open ~ flags ~ r_parens }
+
+component = { ((literals | char_set) ~ quantifier?) | backref }
+regex = { whole_pattern_flag? ~ component+ }
