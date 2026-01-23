@@ -1,0 +1,9 @@
+[package]
+name = "reggie"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+disjoint-ranges = "0.4.0"
+pest = "2.8.5"
+pest_derive = "2.8.5"

@@ -1,0 +1,50 @@
+// ASCII only for now
+backslash = { "\\" }
+caret = { "^" }
+dollar = { "$" }
+dot = { "." }
+l_sq = { "[" }
+r_sq = { "]" }
+l_parens = { "(" }
+r_parens = { ")" }
+l_brace = { "{" }
+r_brace = { "}" }
+asterisk = { "*" }
+plus = { "+" }
+question_mark = { "?" }
+hyphen = { "-" }
+pipe = { "|" }
+quant = _{ asterisk | plus | question_mark }
+quantifier = { (num_times | quant) ~ (question_mark | plus)? }
+num_times = _{
+    l_brace ~
+    (n_at_most | n_between | n_at_least | n_exact) ~
+    r_brace
+}
+n_exact = { ASCII_DIGIT+ }
+n_between = { ASCII_DIGIT+ ~ "," ~ ASCII_DIGIT+ }
+n_at_least = { ASCII_DIGIT+ ~ "," }
+n_at_most = { "," ~ ASCII_DIGIT+ }
+literal = _{
+    ASCII_ALPHANUMERIC | " " | "\t" | "_" | "!" | "\"" | "#" | "%" | "&" | "'" |
+    "," | "/" | ":" | ";" | "<" | ">" | "=" | "@" | "`" | "~" 
+}
+
+set_literal = { literal | dollar | dot | l_parens | r_parens | l_brace | r_brace | plus | question_mark }
+set_negation = @{ caret }
+char_class = { backslash ~ char_class_label }
+char_class_label = { "d" | "D" | "s" | "S" | "w" | "W" }
+char_set = {
+    l_sq ~ (set_negation | hyphen)? ~
+    (char_range | set_literal | char_class | escaped_hyphen)+ ~
+    (char_range | set_literal | char_class | escaped_hyphen | caret)* ~
+    hyphen? ~ r_sq
+}
+escaped_hyphen = { backslash ~ hyphen }
+range_bound = @{ !hyphen ~ ASCII }
+char_range = { range_bound ~ hyphen ~ range_bound }
+non_literal = _{ l_sq | r_sq | l_parens | r_parens | l_brace | r_brace | pipe }
+literals = { !non_literal ~ literal+ }
+
+component = { (literals | char_set) ~ quantifier? }
+regex = { component+ }
