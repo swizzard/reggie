@@ -51,6 +51,12 @@ impl Component {
             self.el.as_string()
         }
     }
+    pub fn min_match_len(&self) -> usize {
+        self.el.min_match_len() * self.quantifier.map(|q| q.min_len_multiplier()).unwrap_or(1)
+    }
+    pub fn is_finite(&self) -> bool {
+        self.quantifier.map(|q| q.is_finite()).unwrap_or(true)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +82,12 @@ impl Element {
             Self::Literal(l) => l.as_string(),
         }
     }
+    pub fn min_match_len(&self) -> usize {
+        match self {
+            Self::CharSet(cs) => cs.min_match_len(),
+            Self::Literal(l) => l.min_match_len(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -93,6 +105,9 @@ impl Literal {
     }
     pub fn as_string(&self) -> String {
         self.0.clone()
+    }
+    pub fn min_match_len(&self) -> usize {
+        self.0.len()
     }
 }
 
@@ -162,6 +177,9 @@ impl CharSet {
         }
         s.push_str("]");
         s
+    }
+    pub fn min_match_len(&self) -> usize {
+        1
     }
 }
 
@@ -393,15 +411,35 @@ impl Quantifier {
         };
         s
     }
+    pub fn is_greedy(&self) -> bool {
+        !matches!(self.greed, G::NonGreedy)
+    }
+    pub fn is_finite(&self) -> bool {
+        match self.quantifier {
+            Q::ZeroOrMore | Q::OneOrMore => false,
+            _ => true,
+        }
+    }
+    pub fn set_greed(&mut self, greed: G) {
+        self.greed = greed;
+    }
+    pub fn set_quantifier(&mut self, quantifier: Q) {
+        self.quantifier = quantifier;
+    }
+    fn min_len_multiplier(&self) -> usize {
+        match self.quantifier {
+            Q::ZeroOrOne | Q::ZeroOrMore => 0,
+            Q::OneOrMore => 1,
+            Q::NExact(n) => n,
+            Q::NTimes { min, .. } => min.unwrap_or_default(),
+        }
+    }
 
     fn new(quantifier: Q) -> Self {
         Self {
             quantifier,
             greed: G::Greedy,
         }
-    }
-    fn set_greed(&mut self, greed: G) {
-        self.greed = greed;
     }
 }
 
