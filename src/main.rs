@@ -4,14 +4,16 @@ use pest::iterators::Pair;
 use reggie::*;
 
 pub fn main() {
-    let res = parser::PyRegexParser::parse(parser::Rule::regex, r"(?i)[a-z]+")
+    let res = parser::PyRegexParser::parse(parser::Rule::regex, r"(?P<foo>(foo[bar]))")
         .unwrap()
         .next()
         .unwrap();
     // println!("{:?}", res);
-    let m = components::Pattern::from_pair(res);
+    let g = components::Pattern::from_pair(res);
+    println!("{:?}", g);
+    // let m = components::Pattern::from_pair(res);
     // let m = components::Flags::from_whole_pattern_pair(res);
-    println!("{:?}", m);
+    // println!("{:?}", m);
     // let m = parser::PCRE2Parser::parse(parser::Rule::regex, r"a+bce[d-f]")
     //     .unwrap()
     //     .next()

@@ -10,6 +10,12 @@ l_parens = { "(" }
 r_parens = { ")" }
 l_brace = { "{" }
 r_brace = { "}" }
+lt = { "<" }
+gt = { ">" }
+eq = { "=" }
+hash = { "#" }
+colon = { ":" }
+exclamation_mark = { "!" }
 asterisk = { "*" }
 plus = { "+" }
 question_mark = { "?" }
@@ -27,11 +33,11 @@ n_between = { ASCII_DIGIT+ ~ "," ~ ASCII_DIGIT+ }
 n_at_least = { ASCII_DIGIT+ ~ "," }
 n_at_most = { "," ~ ASCII_DIGIT+ }
 literal = _{
-    ASCII_ALPHANUMERIC | " " | "\t" | "_" | "!" | "\"" | "#" | "%" | "&" | "'" |
-    "," | "/" | ":" | ";" | "<" | ">" | "=" | "@" | "`" | "~" 
+    ASCII_ALPHANUMERIC | " " | "\t" | hash | ":" | eq | "_" | exclamation_mark | "\"" | "%" | "&" | "'" | "," | "/" | ";" | lt | gt | "@" | "`" | "~" 
 }
+zero_width_literal = @{ backslash ~ ("A" | "b" | "B" | "z" | "Z") }
 
-set_literal = { literal | dollar | dot | l_parens | r_parens | l_brace | r_brace | plus | question_mark }
+set_literal = { literal |  dollar | dot | l_parens | r_parens | l_brace | r_brace | plus | question_mark }
 set_negation = @{ caret }
 char_class = { backslash ~ char_class_label }
 char_class_label = { "d" | "D" | "s" | "S" | "w" | "W" }
@@ -54,7 +60,45 @@ negatable_flag = _{ "i" | "m" | "s" | "x" }
 any_flag = _{ exclusive_flag | negatable_flag }
 flags = { any_flag+ }
 wpf_open = @{ l_parens ~ question_mark }
-whole_pattern_flag = { wpf_open ~ flags ~ r_parens }
+whole_pattern_flags = { wpf_open ~ flags ~ r_parens }
 
-component = { ((literals | char_set) ~ quantifier?) | backref }
-regex = { whole_pattern_flag? ~ component+ }
+pattern_flags = { any_flag+ ~ (hyphen ~ negatable_flag+)? }
+noncapturing = { pattern_flags? ~ colon }
+atomic = { gt }
+named = { "P" ~ lt ~ pattern_name ~ gt }
+pattern_name = { (ASCII_ALPHANUMERIC | "_")+ }
+named_backref = ${ "P=" ~ pattern_name }
+pos_lookahead = @{ eq }
+neg_lookahead = @{ exclamation_mark }
+pos_lookbehind = @{ lt ~ eq }
+neg_lookbehind = @{ lt ~ exclamation_mark }
+ternary = { ternary_group ~ component ~ (pipe ~ component)? }
+numbered_group_id = { ASCII_DIGIT+ }
+named_group_id = { !ASCII_DIGIT ~ ASCII_ALPHANUMERIC+ }
+ternary_group = { l_parens ~ ( numbered_group_id | named_group_id ) ~ r_parens }
+group_ext = { question_mark ~
+    (
+        noncapturing |
+        atomic |
+        pos_lookahead |
+        neg_lookahead |
+        pos_lookbehind |
+        neg_lookbehind |
+        ternary |
+        named_backref |
+        named 
+    )
+}
+group = { l_parens ~ group_ext? ~ component* ~ r_parens }
+
+comment_content = { (!r_parens ~ ANY)+ }
+comment_group = { l_parens ~ question_mark ~ hash ~ comment_content ~ r_parens }
+
+component = {
+    zero_width_literal |
+    comment_group |
+    group |
+    ((literals | char_set) ~ quantifier?) |
+    backref
+}
+regex = { whole_pattern_flags? ~ component+ }

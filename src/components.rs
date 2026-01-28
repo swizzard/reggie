@@ -1,7 +1,7 @@
 use crate::parser::Rule;
 use disjoint_ranges::{DisjointRange, UnaryRange};
 use pest::iterators::{Pair, Pairs};
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt::Write};
 
 #[derive(Clone, Debug)]
 pub struct Pattern {
@@ -17,7 +17,7 @@ impl Pattern {
         while let Some(matched) = inner.next() {
             match matched.as_rule() {
                 Rule::component => components.push(Component::from_pair(matched)),
-                Rule::whole_pattern_flag => {
+                Rule::whole_pattern_flags => {
                     let mut parsed_flags = Flags::from_whole_pattern_pair(matched);
                     std::mem::swap(&mut flags, &mut parsed_flags);
                 }
@@ -32,31 +32,382 @@ impl Pattern {
 }
 
 #[derive(Clone, Debug)]
-pub struct Component {
-    el: Element,
-    quantifier: Option<Quantifier>,
+pub enum Component {
+    Quantifiable {
+        el: Element,
+        quantifier: Option<Quantifier>,
+    },
+    ZeroWidthLiteral(ZeroWidthLiteral),
+    Comment(String),
+    Group(Group),
 }
 
 impl Component {
     pub fn from_pair(pair: Pair<Rule>) -> Self {
+        let rule = pair.as_rule();
         let mut inner = pair.into_inner();
-        let el = Element::from_pair(inner.next().unwrap());
+        if let Some(p) = inner.next() {
+            match p.as_rule() {
+                Rule::literals | Rule::char_set => Component::quantifiable_from_pair(p, inner),
+                Rule::zero_width_literal => Component::zwl_from_pair(p),
+                Rule::comment_group => Component::comment_group_from_pair(p),
+                Rule::group => Component::group_from_pair(p),
+                other => {
+                    println!("component from_pair actually {:?}", other);
+                    unreachable!()
+                }
+            }
+        } else {
+            println!("from_pair {:?} inner {:?}", rule, inner);
+            unreachable!()
+        }
+    }
+    fn inner_components(inner: Pairs<'_, Rule>) -> Vec<Self> {
+        inner
+            .map(|p| match p.as_rule() {
+                Rule::component => Some(Self::from_pair(p)),
+                Rule::r_parens => None,
+                other => {
+                    println!("inner_components actually {:?}", other);
+                    unreachable!()
+                }
+            })
+            .flatten()
+            .collect()
+    }
+
+    fn quantifiable_from_pair(pair: Pair<Rule>, mut inner: Pairs<'_, Rule>) -> Self {
+        let el = Element::from_pair(pair);
         let quantifier = inner.next().map(|p| Quantifier::from_pair(p));
-        Self { el, quantifier }
+        Self::Quantifiable { el, quantifier }
+    }
+    fn zwl_from_pair(pair: Pair<Rule>) -> Self {
+        Self::ZeroWidthLiteral(ZeroWidthLiteral::from_pair(pair))
+    }
+    fn comment_group_from_pair(pair: Pair<Rule>) -> Self {
+        let inner = pair.into_inner();
+        let content = inner.skip(3).next().unwrap(); // (?#
+        Self::Comment(content.as_str().into())
+    }
+    fn group_from_pair(pair: Pair<Rule>) -> Self {
+        let mut inner = pair.into_inner();
+        inner.next(); // l_parens
+        let fst = inner.next().unwrap();
+        match fst.as_rule() {
+            Rule::group_ext => Component::ext_group_from_pairs(fst, inner),
+            Rule::component => Component::plain_group_from_pairs(fst, inner),
+            _ => unreachable!(),
+        }
+    }
+    fn ext_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
+        Self::Group(Group::ext_group_from_pairs(fst, inner))
+    }
+    fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
+        Self::Group(Group::plain_group_from_pairs(fst, inner))
     }
     pub fn as_string(&self) -> String {
-        if let Some(q) = self.quantifier {
-            format!("{}{}", self.el.as_string(), q.as_string())
-        } else {
-            self.el.as_string()
+        match self {
+            Self::Quantifiable {
+                el,
+                quantifier: Some(q),
+            } => format!("{}{}", el.as_string(), q.as_string()),
+            Self::Quantifiable {
+                el,
+                quantifier: None,
+            } => el.as_string(),
+            Self::ZeroWidthLiteral(zwl) => zwl.as_string(),
+            Self::Comment(c) => format!("(?#{}", c),
+            Self::Group(g) => g.as_string(),
         }
     }
     pub fn min_match_len(&self) -> usize {
-        self.el.min_match_len() * self.quantifier.map(|q| q.min_len_multiplier()).unwrap_or(1)
+        match self {
+            Self::Quantifiable { el, quantifier } => {
+                el.min_match_len() * quantifier.map(|q| q.min_len_multiplier()).unwrap_or(1)
+            }
+            _ => todo!(),
+        }
     }
     pub fn is_finite(&self) -> bool {
-        self.quantifier.map(|q| q.is_finite()).unwrap_or(true)
+        match self {
+            Self::Quantifiable { quantifier, .. } => {
+                quantifier.map(|q| q.is_finite()).unwrap_or(true)
+            }
+            _ => todo!(),
+        }
     }
+    pub fn flags(&self) -> Option<GroupFlags> {
+        match self {
+            Component::Group(g) => g.flags(),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GroupExt {
+    NonCapturing,
+    Atomic,
+    PosLookahead,
+    NegLookahead,
+    PosLookbehind,
+    NegLookbehind,
+}
+
+impl GroupExt {
+    fn as_string(&self) -> String {
+        match self {
+            Self::NonCapturing => String::from("?:"),
+            _ => todo!(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum TernaryGroupId {
+    Numbered(usize),
+    Named(String),
+}
+
+impl TernaryGroupId {
+    fn as_string(&self) -> String {
+        match self {
+            TernaryGroupId::Numbered(n) => n.to_string(),
+            TernaryGroupId::Named(n) => n.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Group {
+    NamedBackref {
+        name: String,
+    },
+    Ternary {
+        group_id: TernaryGroupId,
+        yes_pat: Box<Component>,
+        no_pat: Option<Box<Component>>,
+    },
+    Group {
+        ext: Option<GroupExt>,
+        flags: GroupFlags,
+        name: Option<String>,
+        components: Vec<Component>,
+    },
+}
+
+impl Group {
+    fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
+        let mut c = vec![Component::from_pair(fst)];
+        for p in inner.into_iter() {
+            if p.as_rule() == Rule::component {
+                c.push(Component::from_pair(p));
+            }
+        }
+        Self::Group {
+            ext: None,
+            flags: GroupFlags::empty(),
+            name: None,
+            components: c,
+        }
+    }
+    fn ext_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
+        let mut fst_inner = fst.into_inner();
+        fst_inner.next(); // ?
+        let ext_pair = fst_inner.next().unwrap();
+        match ext_pair.as_rule() {
+            Rule::noncapturing => Self::noncapturing_group_from_pairs(ext_pair, inner),
+            Rule::atomic => Self::atomic_group_from_pairs(inner),
+            Rule::pos_lookahead => Self::pos_lookahead_group_from_pairs(inner),
+            Rule::neg_lookahead => Self::neg_lookahead_group_from_pairs(inner),
+            Rule::pos_lookbehind => Self::pos_lookbehind_group_from_pairs(inner),
+            Rule::neg_lookbehind => Self::neg_lookbehind_group_from_pairs(inner),
+            Rule::named_backref => Self::named_backref_from_pairs(ext_pair),
+            Rule::named => Self::named_group_from_pairs(ext_pair, inner),
+            Rule::ternary => Self::ternary_group_from_pairs(ext_pair),
+            // Rule::l_parens => Self::immediate_group_from_pairs(fst_inner),
+            other => {
+                println!("ext_group_from_pairs actually {:?}", other);
+                unreachable!()
+            }
+        }
+    }
+    fn as_string(&self) -> String {
+        match self {
+            Group::NamedBackref { name } => format!("(?P={}", name),
+            Group::Ternary {
+                group_id,
+                yes_pat,
+                no_pat: None,
+            } => format!("(?({}){})", group_id.as_string(), yes_pat.as_string()),
+            Group::Ternary {
+                group_id,
+                yes_pat,
+                no_pat: Some(no_pat),
+            } => format!(
+                "(?({}){}|{})",
+                group_id.as_string(),
+                yes_pat.as_string(),
+                no_pat.as_string()
+            ),
+            Group::Group {
+                ext: Some(ext),
+                name: None,
+                components: cs,
+                ..
+            } => {
+                let mut s = format!("(?{}", ext.as_string());
+                for component in cs.iter() {
+                    write!(&mut s, "{}", component.as_string()).unwrap();
+                }
+                write!(&mut s, ")").unwrap();
+                s
+            }
+            Group::Group {
+                ext: None,
+                name: Some(name),
+                components: cs,
+                ..
+            } => {
+                let mut s = format!("(?P<{}>", name);
+                for component in cs.iter() {
+                    write!(&mut s, "{}", component.as_string()).unwrap();
+                }
+                s
+            }
+            Group::Group {
+                ext: None,
+                name: None,
+                ..
+            } => unreachable!(),
+            Group::Group {
+                ext: Some(_),
+                name: Some(_),
+                ..
+            } => unreachable!(),
+        }
+    }
+    fn flags(&self) -> Option<GroupFlags> {
+        match self {
+            Self::Group {
+                components, flags, ..
+            } => {
+                if flags.is_empty() {
+                    for comp in components.iter() {
+                        let f = comp.flags();
+                        if f.is_some() {
+                            return f;
+                        }
+                    }
+                    None
+                } else {
+                    Some(flags.clone())
+                }
+            }
+            _ => None,
+        }
+    }
+    fn noncapturing_group_from_pairs(ext_pair: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
+        let flags = if let Some(matched_flags) = ext_pair.into_inner().next() {
+            GroupFlags::from_pair(matched_flags)
+        } else {
+            GroupFlags::empty()
+        };
+        let components = Component::inner_components(inner);
+        Self::Group {
+            ext: Some(GroupExt::NonCapturing),
+            name: None,
+            components,
+            flags,
+        }
+    }
+    fn atomic_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+        Self::mk_ext_group(GroupExt::Atomic, inner)
+    }
+    fn pos_lookahead_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+        Self::mk_ext_group(GroupExt::PosLookahead, inner)
+    }
+    fn neg_lookahead_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+        Self::mk_ext_group(GroupExt::NegLookahead, inner)
+    }
+    fn pos_lookbehind_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+        Self::mk_ext_group(GroupExt::PosLookbehind, inner)
+    }
+    fn neg_lookbehind_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+        Self::mk_ext_group(GroupExt::NegLookbehind, inner)
+    }
+    fn named_backref_from_pairs(ext_pair: Pair<Rule>) -> Self {
+        let name = ext_pair
+            .into_inner()
+            .skip(1) // ?
+            .next()
+            .unwrap()
+            .into_inner()
+            .next()
+            .unwrap()
+            .as_str()
+            .into();
+        Self::NamedBackref { name }
+    }
+    fn ternary_group_from_pairs(ext_pair: Pair<Rule>) -> Self {
+        let mut inner = ext_pair.into_inner();
+        let group = inner
+            .next()
+            .unwrap()
+            .into_inner()
+            .skip(1) // (
+            .next()
+            .unwrap();
+        let group_id = match group.as_rule() {
+            Rule::numbered_group_id => {
+                TernaryGroupId::Numbered(group.as_str().parse::<usize>().unwrap())
+            }
+            Rule::named_group_id => TernaryGroupId::Named(group.as_str().into()),
+            _ => unreachable!(),
+        };
+        let yes_pat = Box::new(Component::from_pair(inner.next().unwrap()));
+        // skip |
+        let no_pat = if inner.next().is_some() {
+            Some(Box::new(Component::from_pair(inner.next().unwrap())))
+        } else {
+            None
+        };
+        Self::Ternary {
+            group_id,
+            yes_pat,
+            no_pat,
+        }
+    }
+    fn named_group_from_pairs(ext_pair: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
+        let mut ext_inner = ext_pair.into_inner();
+        ext_inner.next(); // <
+        let name: String = ext_inner.next().unwrap().as_str().into();
+        let components = Component::inner_components(inner);
+        Self::Group {
+            ext: None,
+            flags: GroupFlags::empty(),
+            name: Some(name),
+            components,
+        }
+    }
+    fn mk_ext_group(ext: GroupExt, pairs: Pairs<'_, Rule>) -> Self {
+        let components = Component::inner_components(pairs);
+        Self::Group {
+            ext: Some(ext),
+            name: None,
+            components,
+            flags: GroupFlags::empty(),
+        }
+    }
+    // fn immediate_group_from_pairs(pairs: Pairs<'_, Rule>) -> Self {
+    //     let components = Component::inner_components(pairs);
+    //     Self::Group {
+    //         ext: None,
+    //         name: None,
+    //         components,
+    //         flags: GroupFlags::empty(),
+    //     }
+    // }
 }
 
 #[derive(Clone, Debug)]
@@ -256,7 +607,7 @@ impl CharClass {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-enum Q {
+pub enum Q {
     ZeroOrOne,
     ZeroOrMore,
     OneOrMore,
@@ -315,7 +666,7 @@ impl Q {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-enum G {
+pub enum G {
     Greedy,
     NonGreedy,
     Possessive,
@@ -487,13 +838,13 @@ impl Flag {
 pub struct Flags(HashSet<Flag>);
 
 impl Flags {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self(HashSet::new())
     }
-    pub fn add(&mut self, flag: Flag) {
+    fn add(&mut self, flag: Flag) {
         self.0.insert(flag);
     }
-    pub fn remove(&mut self, flag: &Flag) {
+    fn remove(&mut self, flag: &Flag) {
         self.0.remove(flag);
     }
     pub fn as_string(&self) -> String {
@@ -503,7 +854,7 @@ impl Flags {
         }
         s
     }
-    pub fn from_whole_pattern_pair(pair: Pair<Rule>) -> Self {
+    fn from_whole_pattern_pair(pair: Pair<Rule>) -> Self {
         let mut inner = pair.into_inner();
         inner.next(); // (?
         let flag_match = inner.next().unwrap();
@@ -516,6 +867,77 @@ impl Flags {
         } else {
             println!("actually {:?}", flag_match.as_rule());
             unreachable!()
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GroupFlags {
+    pos: Flags,
+    neg: Flags,
+}
+
+impl GroupFlags {
+    fn empty() -> Self {
+        Self {
+            pos: Flags::new(),
+            neg: Flags::new(),
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.pos.is_empty() && self.neg.is_empty()
+    }
+
+    fn from_pair(pair: Pair<Rule>) -> Self {
+        let mut pos = Flags::new();
+        let mut neg = Flags::new();
+        let mut s = pair.as_str().split('-');
+        for c in s.next().unwrap().chars() {
+            pos.add(Flag::from_char(c));
+        }
+        if let Some(neg_flag_str) = s.next() {
+            for c in neg_flag_str.chars() {
+                neg.add(Flag::from_char(c))
+            }
+        };
+        Self { pos, neg }
+    }
+    fn as_string(&self) -> String {
+        if !self.neg.0.is_empty() {
+            format!("{}-{}", self.pos.as_string(), self.neg.as_string())
+        } else {
+            self.pos.as_string()
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ZeroWidthLiteral {
+    InputStart,
+    InputEnd,
+    WordBoundary,
+    NotWordBoundary,
+}
+
+impl ZeroWidthLiteral {
+    pub fn from_pair(pair: Pair<Rule>) -> Self {
+        match pair.as_str() {
+            "\\A" | "\\a" => Self::InputStart,
+            "\\b" => Self::WordBoundary,
+            "\\B" => Self::NotWordBoundary,
+            "\\Z" | "\\z" => Self::InputEnd,
+            _ => unreachable!(),
+        }
+    }
+    pub fn as_string(&self) -> String {
+        match self {
+            Self::InputStart => String::from("\\a"),
+            Self::InputEnd => String::from("\\z"),
+            Self::NotWordBoundary => String::from("\\B"),
+            Self::WordBoundary => String::from("\\b"),
         }
     }
 }
