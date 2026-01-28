@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.100"
 disjoint-ranges = "0.4.0"
 pest = "2.8.5"
 pest_derive = "2.8.5"
+thiserror = "2.0.18"

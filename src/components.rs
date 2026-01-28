@@ -1,4 +1,5 @@
-use crate::parser::Rule;
+use crate::{error::ReggieError, parser::Rule};
+use anyhow::{Context, Result};
 use disjoint_ranges::{DisjointRange, UnaryRange};
 use pest::iterators::{Pair, Pairs};
 use std::{collections::HashSet, fmt::Write};
@@ -10,27 +11,24 @@ pub struct Pattern {
 }
 
 impl Pattern {
-    pub fn from_pair(pair: Pair<Rule>) -> Self {
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
         let mut inner = pair.into_inner();
         let mut flags = Flags::new();
         let mut sub_patterns = Vec::new();
         while let Some(matched) = inner.next() {
             match matched.as_rule() {
-                Rule::sub_pattern => sub_patterns.push(SubPattern::from_pair(matched)),
+                Rule::sub_pattern => sub_patterns.push(SubPattern::from_pair(matched)?),
                 Rule::whole_pattern_flags => {
-                    let mut parsed_flags = Flags::from_whole_pattern_pair(matched);
+                    let mut parsed_flags = Flags::from_whole_pattern_pair(matched)?;
                     std::mem::swap(&mut flags, &mut parsed_flags);
                 }
-                other => {
-                    println!("actually {:?}", other);
-                    unreachable!()
-                }
+                _ => return Err(ReggieError::unexpected_input(matched).into()),
             }
         }
-        Self {
+        Ok(Self {
             flags,
             sub_patterns,
-        }
+        })
     }
 }
 
@@ -46,8 +44,9 @@ pub enum SubPattern {
 }
 
 impl SubPattern {
-    pub fn from_pair(pair: Pair<Rule>) -> Self {
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
         let rule = pair.as_rule();
+        let (_, char_ix) = pair.line_col();
         let mut inner = pair.into_inner();
         if let Some(p) = inner.next() {
             match p.as_rule() {
@@ -55,51 +54,52 @@ impl SubPattern {
                 Rule::zero_width_literal => SubPattern::zwl_from_pair(p),
                 Rule::comment_group => SubPattern::comment_group_from_pair(p),
                 Rule::group => SubPattern::group_from_pair(p),
-                other => {
-                    println!("component from_pair actually {:?}", other);
-                    unreachable!()
-                }
+                _ => Err(ReggieError::unexpected_input(p).into()),
             }
         } else {
-            println!("from_pair {:?} inner {:?}", rule, inner);
-            unreachable!()
+            Err(ReggieError::unexpected_eoi(char_ix).into())
         }
     }
-    fn inner_components(inner: Pairs<'_, Rule>) -> Vec<Self> {
-        inner
-            .map(|p| match p.as_rule() {
-                Rule::sub_pattern => Some(Self::from_pair(p)),
-                Rule::r_parens => None,
-                other => {
-                    println!("inner_components actually {:?}", other);
-                    unreachable!()
+    fn inner_components(inner: Pairs<'_, Rule>) -> Result<Vec<Self>> {
+        let mut comps: Vec<Self> = Vec::new();
+        for p in inner {
+            match p.as_rule() {
+                Rule::sub_pattern => comps.push(Self::from_pair(p)?),
+                Rule::r_parens => continue,
+                _ => {
+                    return Err(ReggieError::unexpected_input(p).into())
                 }
-            })
-            .flatten()
-            .collect()
+            }
+        }
+        Ok(comps)
+
     }
 
-    fn quantifiable_from_pair(pair: Pair<Rule>, mut inner: Pairs<'_, Rule>) -> Self {
-        let el = Element::from_pair(pair);
-        let quantifier = inner.next().map(|p| Quantifier::from_pair(p));
-        Self::Quantifiable { el, quantifier }
+    fn quantifiable_from_pair(pair: Pair<Rule>, mut inner: Pairs<'_, Rule>) -> Result<Self> {
+        let el = Element::from_pair(pair)?;
+        let quantifier = if let Some(p) = inner.next() {
+            Quantifier::from_pair(p)?
+        } else {
+            None
+        }
+        Ok(Self::Quantifiable { el, quantifier })
     }
-    fn zwl_from_pair(pair: Pair<Rule>) -> Self {
-        Self::ZeroWidthLiteral(ZeroWidthLiteral::from_pair(pair))
+    fn zwl_from_pair(pair: Pair<Rule>) -> Result<Self> {
+        Ok(Self::ZeroWidthLiteral(ZeroWidthLiteral::from_pair(pair)?))
     }
-    fn comment_group_from_pair(pair: Pair<Rule>) -> Self {
+    fn comment_group_from_pair(pair: Pair<Rule>) -> Result<Self> {
         let inner = pair.into_inner();
         let content = inner.skip(3).next().unwrap(); // (?#
-        Self::Comment(content.as_str().into())
+        Ok(Self::Comment(content.as_str().into()))
     }
-    fn group_from_pair(pair: Pair<Rule>) -> Self {
+    fn group_from_pair(pair: Pair<Rule>) -> Result<Self> {
         let mut inner = pair.into_inner();
         inner.next(); // l_parens
         let fst = inner.next().unwrap();
         match fst.as_rule() {
             Rule::group_ext => SubPattern::ext_group_from_pairs(fst, inner),
             Rule::sub_pattern => SubPattern::plain_group_from_pairs(fst, inner),
-            _ => unreachable!(),
+            _ => Err(ReggieError::unexpected_input(fst).into()),
         }
     }
     fn ext_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
@@ -366,51 +366,45 @@ impl Group {
                 TernaryGroupId::Numbered(group.as_str().parse::<usize>().unwrap())
             }
             Rule::named_group_id => TernaryGroupId::Named(group.as_str().into()),
-            _ => unreachable!(),
+            _ => Err(ReggieError::unexpected_input(group).into()),
         };
-        let yes_pat = Box::new(SubPattern::from_pair(inner.next().unwrap()));
-        // skip |
-        let no_pat = if inner.next().is_some() {
-            Some(Box::new(SubPattern::from_pair(inner.next().unwrap())))
+        if let Some(yp) = inner.next() {
+            let yes_pat = Box::new(SubPattern::from_pair(inner.next().unwrap()));
+            // skip |
+            let no_pat = if inner.next().is_some() {
+                Some(Box::new(SubPattern::from_pair(inner.next().unwrap())))
+            } else {
+                None
+            };
+            Self::Ternary {
+                group_id,
+                yes_pat,
+                no_pat,
+            }
         } else {
-            None
-        };
-        Self::Ternary {
-            group_id,
-            yes_pat,
-            no_pat,
-        }
+            Err(ReggieError::unexpecte
     }
-    fn named_group_from_pairs(ext_pair: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
+    fn named_group_from_pairs(ext_pair: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
         let mut ext_inner = ext_pair.into_inner();
         ext_inner.next(); // <
         let name: String = ext_inner.next().unwrap().as_str().into();
-        let components = SubPattern::inner_components(inner);
-        Self::Group {
+        let components = SubPattern::inner_components(inner)?;
+        Ok(Self::Group {
             ext: None,
             flags: GroupFlags::empty(),
             name: Some(name),
             components,
-        }
+        })
     }
-    fn mk_ext_group(ext: GroupExt, pairs: Pairs<'_, Rule>) -> Self {
-        let components = SubPattern::inner_components(pairs);
-        Self::Group {
+    fn mk_ext_group(ext: GroupExt, pairs: Pairs<'_, Rule>) -> Result<Self> {
+        let components = SubPattern::inner_components(pairs)?;
+        Ok(Self::Group {
             ext: Some(ext),
             name: None,
             components,
             flags: GroupFlags::empty(),
-        }
+        })
     }
-    // fn immediate_group_from_pairs(pairs: Pairs<'_, Rule>) -> Self {
-    //     let components = Component::inner_components(pairs);
-    //     Self::Group {
-    //         ext: None,
-    //         name: None,
-    //         components,
-    //         flags: GroupFlags::empty(),
-    //     }
-    // }
 }
 
 #[derive(Clone, Debug)]
@@ -420,13 +414,12 @@ pub enum Element {
 }
 
 impl Element {
-    pub fn from_pair(pair: Pair<Rule>) -> Self {
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
         match pair.as_rule() {
             Rule::char_set => Self::CharSet(CharSet::from_pair(pair)),
             Rule::literals => Self::Literal(Literal::from_pair(pair)),
             _ => {
-                println!("actually {:?}", pair);
-                unreachable!()
+                Err(ReggieError::unexpected_input(pair).into())
             }
         }
     }
@@ -857,7 +850,7 @@ impl Flags {
         }
         s
     }
-    fn from_whole_pattern_pair(pair: Pair<Rule>) -> Self {
+    fn from_whole_pattern_pair(pair: Pair<Rule>) -> Result<Self> {
         let mut inner = pair.into_inner();
         inner.next(); // (?
         let flag_match = inner.next().unwrap();
@@ -866,10 +859,9 @@ impl Flags {
             for c in flag_match.as_str().chars() {
                 flags.add(Flag::from_char(c));
             }
-            flags
+            Ok(flags)
         } else {
-            println!("actually {:?}", flag_match.as_rule());
-            unreachable!()
+            Err(ReggieError::unexpected_input(flag_match).into())
         }
     }
     fn is_empty(&self) -> bool {
