@@ -72,7 +72,7 @@ pos_lookahead = @{ eq }
 neg_lookahead = @{ exclamation_mark }
 pos_lookbehind = @{ lt ~ eq }
 neg_lookbehind = @{ lt ~ exclamation_mark }
-ternary = { ternary_group ~ component ~ (pipe ~ component)? }
+ternary = { ternary_group ~ sub_pattern ~ (pipe ~ sub_pattern)? }
 numbered_group_id = { ASCII_DIGIT+ }
 named_group_id = { !ASCII_DIGIT ~ ASCII_ALPHANUMERIC+ }
 ternary_group = { l_parens ~ ( numbered_group_id | named_group_id ) ~ r_parens }
@@ -89,16 +89,16 @@ group_ext = { question_mark ~
         named 
     )
 }
-group = { l_parens ~ group_ext? ~ component* ~ r_parens }
+group = { l_parens ~ group_ext? ~ sub_pattern* ~ r_parens }
 
 comment_content = { (!r_parens ~ ANY)+ }
 comment_group = { l_parens ~ question_mark ~ hash ~ comment_content ~ r_parens }
 
-component = {
+sub_pattern = {
     zero_width_literal |
     comment_group |
     group |
     ((literals | char_set) ~ quantifier?) |
     backref
 }
-regex = { whole_pattern_flags? ~ component+ }
+regex = { whole_pattern_flags? ~ sub_pattern+ }

@@ -6,17 +6,17 @@ use std::{collections::HashSet, fmt::Write};
 #[derive(Clone, Debug)]
 pub struct Pattern {
     flags: Flags,
-    components: Vec<Component>,
+    sub_patterns: Vec<SubPattern>,
 }
 
 impl Pattern {
     pub fn from_pair(pair: Pair<Rule>) -> Self {
         let mut inner = pair.into_inner();
         let mut flags = Flags::new();
-        let mut components = Vec::new();
+        let mut sub_patterns = Vec::new();
         while let Some(matched) = inner.next() {
             match matched.as_rule() {
-                Rule::component => components.push(Component::from_pair(matched)),
+                Rule::sub_pattern => sub_patterns.push(SubPattern::from_pair(matched)),
                 Rule::whole_pattern_flags => {
                     let mut parsed_flags = Flags::from_whole_pattern_pair(matched);
                     std::mem::swap(&mut flags, &mut parsed_flags);
@@ -27,12 +27,15 @@ impl Pattern {
                 }
             }
         }
-        Self { flags, components }
+        Self {
+            flags,
+            sub_patterns,
+        }
     }
 }
 
 #[derive(Clone, Debug)]
-pub enum Component {
+pub enum SubPattern {
     Quantifiable {
         el: Element,
         quantifier: Option<Quantifier>,
@@ -42,16 +45,16 @@ pub enum Component {
     Group(Group),
 }
 
-impl Component {
+impl SubPattern {
     pub fn from_pair(pair: Pair<Rule>) -> Self {
         let rule = pair.as_rule();
         let mut inner = pair.into_inner();
         if let Some(p) = inner.next() {
             match p.as_rule() {
-                Rule::literals | Rule::char_set => Component::quantifiable_from_pair(p, inner),
-                Rule::zero_width_literal => Component::zwl_from_pair(p),
-                Rule::comment_group => Component::comment_group_from_pair(p),
-                Rule::group => Component::group_from_pair(p),
+                Rule::literals | Rule::char_set => SubPattern::quantifiable_from_pair(p, inner),
+                Rule::zero_width_literal => SubPattern::zwl_from_pair(p),
+                Rule::comment_group => SubPattern::comment_group_from_pair(p),
+                Rule::group => SubPattern::group_from_pair(p),
                 other => {
                     println!("component from_pair actually {:?}", other);
                     unreachable!()
@@ -65,7 +68,7 @@ impl Component {
     fn inner_components(inner: Pairs<'_, Rule>) -> Vec<Self> {
         inner
             .map(|p| match p.as_rule() {
-                Rule::component => Some(Self::from_pair(p)),
+                Rule::sub_pattern => Some(Self::from_pair(p)),
                 Rule::r_parens => None,
                 other => {
                     println!("inner_components actually {:?}", other);
@@ -94,8 +97,8 @@ impl Component {
         inner.next(); // l_parens
         let fst = inner.next().unwrap();
         match fst.as_rule() {
-            Rule::group_ext => Component::ext_group_from_pairs(fst, inner),
-            Rule::component => Component::plain_group_from_pairs(fst, inner),
+            Rule::group_ext => SubPattern::ext_group_from_pairs(fst, inner),
+            Rule::sub_pattern => SubPattern::plain_group_from_pairs(fst, inner),
             _ => unreachable!(),
         }
     }
@@ -138,7 +141,7 @@ impl Component {
     }
     pub fn flags(&self) -> Option<GroupFlags> {
         match self {
-            Component::Group(g) => g.flags(),
+            SubPattern::Group(g) => g.flags(),
             _ => None,
         }
     }
@@ -185,23 +188,23 @@ pub enum Group {
     },
     Ternary {
         group_id: TernaryGroupId,
-        yes_pat: Box<Component>,
-        no_pat: Option<Box<Component>>,
+        yes_pat: Box<SubPattern>,
+        no_pat: Option<Box<SubPattern>>,
     },
     Group {
         ext: Option<GroupExt>,
         flags: GroupFlags,
         name: Option<String>,
-        components: Vec<Component>,
+        components: Vec<SubPattern>,
     },
 }
 
 impl Group {
     fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
-        let mut c = vec![Component::from_pair(fst)];
+        let mut c = vec![SubPattern::from_pair(fst)];
         for p in inner.into_iter() {
-            if p.as_rule() == Rule::component {
-                c.push(Component::from_pair(p));
+            if p.as_rule() == Rule::sub_pattern {
+                c.push(SubPattern::from_pair(p));
             }
         }
         Self::Group {
@@ -313,7 +316,7 @@ impl Group {
         } else {
             GroupFlags::empty()
         };
-        let components = Component::inner_components(inner);
+        let components = SubPattern::inner_components(inner);
         Self::Group {
             ext: Some(GroupExt::NonCapturing),
             name: None,
@@ -365,10 +368,10 @@ impl Group {
             Rule::named_group_id => TernaryGroupId::Named(group.as_str().into()),
             _ => unreachable!(),
         };
-        let yes_pat = Box::new(Component::from_pair(inner.next().unwrap()));
+        let yes_pat = Box::new(SubPattern::from_pair(inner.next().unwrap()));
         // skip |
         let no_pat = if inner.next().is_some() {
-            Some(Box::new(Component::from_pair(inner.next().unwrap())))
+            Some(Box::new(SubPattern::from_pair(inner.next().unwrap())))
         } else {
             None
         };
@@ -382,7 +385,7 @@ impl Group {
         let mut ext_inner = ext_pair.into_inner();
         ext_inner.next(); // <
         let name: String = ext_inner.next().unwrap().as_str().into();
-        let components = Component::inner_components(inner);
+        let components = SubPattern::inner_components(inner);
         Self::Group {
             ext: None,
             flags: GroupFlags::empty(),
@@ -391,7 +394,7 @@ impl Group {
         }
     }
     fn mk_ext_group(ext: GroupExt, pairs: Pairs<'_, Rule>) -> Self {
-        let components = Component::inner_components(pairs);
+        let components = SubPattern::inner_components(pairs);
         Self::Group {
             ext: Some(ext),
             name: None,
