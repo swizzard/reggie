@@ -20,7 +20,11 @@ impl GroupExt {
     fn as_string(&self) -> String {
         match self {
             Self::NonCapturing => String::from("?:"),
-            _ => todo!(),
+            Self::Atomic => String::from("?>"),
+            Self::PosLookahead => String::from("?="),
+            Self::NegLookahead => String::from("?!"),
+            Self::PosLookbehind => String::from("?<="),
+            Self::NegLookbehind => String::from("?<!"),
         }
     }
 }
@@ -166,6 +170,35 @@ impl Group {
                 }
             }
             _ => None,
+        }
+    }
+    pub fn min_match_len(&self) -> usize {
+        //TODO(shr) this isn't quite right
+        match self {
+            Group::NamedBackref { .. } => 0,
+            Group::Ternary { yes_pat, .. } => yes_pat.min_match_len(),
+            Group::Group {
+                ext: Some(GroupExt::NonCapturing),
+                ..
+            } => 0,
+            Group::Group { components, .. } => components.iter().map(|c| c.min_match_len()).sum(),
+        }
+    }
+    pub fn is_finite(&self) -> bool {
+        //TODO(shr) similarly flawed
+        match self {
+            Group::NamedBackref { .. } => true,
+            Group::Ternary {
+                yes_pat, no_pat, ..
+            } => yes_pat.is_finite() && no_pat.as_ref().map_or(true, |p| p.is_finite()),
+            Group::Group { components, .. } => {
+                for c in components.iter() {
+                    if !c.is_finite() {
+                        return false;
+                    }
+                }
+                true
+            }
         }
     }
     pub(crate) fn noncapturing_group_from_pairs(

@@ -36,6 +36,32 @@ impl Pattern {
             sub_patterns,
         })
     }
+    pub fn flags(&self) -> &Flags {
+        &self.flags
+    }
+    pub fn as_string(&self) -> String {
+        let mut s = if self.flags.is_empty() {
+            String::new()
+        } else {
+            format!("({})", self.flags.as_string())
+        };
+        for sp in self.sub_patterns.iter() {
+            s.push_str(sp.as_string().as_str())
+        }
+        s
+    }
+    pub fn is_finite(&self) -> bool {
+        for sp in self.sub_patterns.iter() {
+            if !sp.is_finite() {
+                return false;
+            }
+        }
+        true
+    }
+    // TODO(SHR): fix these
+    pub fn min_match_len(&self) -> usize {
+        self.sub_patterns.iter().map(|sp| sp.min_match_len()).sum()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -63,6 +89,46 @@ impl SubPattern {
             }
         } else {
             Err(ReggieError::unexpected_eoi(char_ix).into())
+        }
+    }
+    pub fn as_string(&self) -> String {
+        match self {
+            Self::Quantifiable {
+                el,
+                quantifier: Some(q),
+            } => format!("{}{}", el.as_string(), q.as_string()),
+            Self::Quantifiable {
+                el,
+                quantifier: None,
+            } => el.as_string(),
+            Self::ZeroWidthLiteral(zwl) => zwl.as_string(),
+            Self::Comment(c) => format!("(?#{})", c),
+            Self::Group(g) => g.as_string(),
+        }
+    }
+    pub fn min_match_len(&self) -> usize {
+        match self {
+            Self::Quantifiable { el, quantifier } => {
+                el.min_match_len() * quantifier.map(|q| q.min_len_multiplier()).unwrap_or(1)
+            }
+            Self::ZeroWidthLiteral(_) => 0,
+            Self::Comment(_) => 0,
+            Self::Group(g) => g.min_match_len(),
+        }
+    }
+    pub fn is_finite(&self) -> bool {
+        match self {
+            Self::Quantifiable { quantifier, .. } => {
+                quantifier.map(|q| q.is_finite()).unwrap_or(true)
+            }
+            Self::Group(g) => g.is_finite(),
+            _ => true,
+        }
+    }
+    pub fn flags(&self) -> Option<GroupFlags> {
+        match self {
+            SubPattern::Group(g) => g.flags(),
+            _ => None,
         }
     }
     pub(crate) fn inner_components(inner: Pairs<'_, Rule>) -> Result<Vec<Self>> {
@@ -114,42 +180,5 @@ impl SubPattern {
     }
     fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
         Ok(Self::Group(Group::plain_group_from_pairs(fst, inner)?))
-    }
-    pub fn as_string(&self) -> String {
-        match self {
-            Self::Quantifiable {
-                el,
-                quantifier: Some(q),
-            } => format!("{}{}", el.as_string(), q.as_string()),
-            Self::Quantifiable {
-                el,
-                quantifier: None,
-            } => el.as_string(),
-            Self::ZeroWidthLiteral(zwl) => zwl.as_string(),
-            Self::Comment(c) => format!("(?#{}", c),
-            Self::Group(g) => g.as_string(),
-        }
-    }
-    pub fn min_match_len(&self) -> usize {
-        match self {
-            Self::Quantifiable { el, quantifier } => {
-                el.min_match_len() * quantifier.map(|q| q.min_len_multiplier()).unwrap_or(1)
-            }
-            _ => todo!(),
-        }
-    }
-    pub fn is_finite(&self) -> bool {
-        match self {
-            Self::Quantifiable { quantifier, .. } => {
-                quantifier.map(|q| q.is_finite()).unwrap_or(true)
-            }
-            _ => todo!(),
-        }
-    }
-    pub fn flags(&self) -> Option<GroupFlags> {
-        match self {
-            SubPattern::Group(g) => g.flags(),
-            _ => None,
-        }
     }
 }
