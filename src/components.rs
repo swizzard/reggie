@@ -1,5 +1,5 @@
 use crate::{error::ReggieError, parser::Rule};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use disjoint_ranges::{DisjointRange, UnaryRange};
 use pest::iterators::{Pair, Pairs};
 use std::{collections::HashSet, fmt::Write};
@@ -45,7 +45,6 @@ pub enum SubPattern {
 
 impl SubPattern {
     pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
-        let rule = pair.as_rule();
         let (_, char_ix) = pair.line_col();
         let mut inner = pair.into_inner();
         if let Some(p) = inner.next() {
@@ -66,47 +65,49 @@ impl SubPattern {
             match p.as_rule() {
                 Rule::sub_pattern => comps.push(Self::from_pair(p)?),
                 Rule::r_parens => continue,
-                _ => {
-                    return Err(ReggieError::unexpected_input(p).into())
-                }
+                _ => return Err(ReggieError::unexpected_input(p).into()),
             }
         }
         Ok(comps)
-
     }
 
     fn quantifiable_from_pair(pair: Pair<Rule>, mut inner: Pairs<'_, Rule>) -> Result<Self> {
         let el = Element::from_pair(pair)?;
         let quantifier = if let Some(p) = inner.next() {
-            Quantifier::from_pair(p)?
+            Some(Quantifier::from_pair(p)?)
         } else {
             None
-        }
+        };
         Ok(Self::Quantifiable { el, quantifier })
     }
     fn zwl_from_pair(pair: Pair<Rule>) -> Result<Self> {
         Ok(Self::ZeroWidthLiteral(ZeroWidthLiteral::from_pair(pair)?))
     }
     fn comment_group_from_pair(pair: Pair<Rule>) -> Result<Self> {
+        let (_, char_ix) = pair.line_col();
         let inner = pair.into_inner();
-        let content = inner.skip(3).next().unwrap(); // (?#
+        let content = inner
+            .skip(3)
+            .next()
+            .ok_or(ReggieError::unexpected_eoi(char_ix))?; // (?#
         Ok(Self::Comment(content.as_str().into()))
     }
     fn group_from_pair(pair: Pair<Rule>) -> Result<Self> {
+        let (_, char_ix) = pair.line_col();
         let mut inner = pair.into_inner();
         inner.next(); // l_parens
-        let fst = inner.next().unwrap();
+        let fst = inner.next().ok_or(ReggieError::unexpected_eoi(char_ix))?;
         match fst.as_rule() {
             Rule::group_ext => SubPattern::ext_group_from_pairs(fst, inner),
             Rule::sub_pattern => SubPattern::plain_group_from_pairs(fst, inner),
             _ => Err(ReggieError::unexpected_input(fst).into()),
         }
     }
-    fn ext_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
-        Self::Group(Group::ext_group_from_pairs(fst, inner))
+    fn ext_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
+        Ok(Self::Group(Group::ext_group_from_pairs(fst, inner)?))
     }
-    fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
-        Self::Group(Group::plain_group_from_pairs(fst, inner))
+    fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
+        Ok(Self::Group(Group::plain_group_from_pairs(fst, inner)?))
     }
     pub fn as_string(&self) -> String {
         match self {
@@ -200,24 +201,27 @@ pub enum Group {
 }
 
 impl Group {
-    fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
-        let mut c = vec![SubPattern::from_pair(fst)];
+    fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
+        let mut c = vec![SubPattern::from_pair(fst)?];
         for p in inner.into_iter() {
             if p.as_rule() == Rule::sub_pattern {
-                c.push(SubPattern::from_pair(p));
+                c.push(SubPattern::from_pair(p)?);
             }
         }
-        Self::Group {
+        Ok(Self::Group {
             ext: None,
             flags: GroupFlags::empty(),
             name: None,
             components: c,
-        }
+        })
     }
-    fn ext_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
+    fn ext_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
+        let (_, char_ix) = fst.line_col();
         let mut fst_inner = fst.into_inner();
         fst_inner.next(); // ?
-        let ext_pair = fst_inner.next().unwrap();
+        let ext_pair = fst_inner
+            .next()
+            .ok_or(ReggieError::unexpected_eoi(char_ix))?;
         match ext_pair.as_rule() {
             Rule::noncapturing => Self::noncapturing_group_from_pairs(ext_pair, inner),
             Rule::atomic => Self::atomic_group_from_pairs(inner),
@@ -228,11 +232,7 @@ impl Group {
             Rule::named_backref => Self::named_backref_from_pairs(ext_pair),
             Rule::named => Self::named_group_from_pairs(ext_pair, inner),
             Rule::ternary => Self::ternary_group_from_pairs(ext_pair),
-            // Rule::l_parens => Self::immediate_group_from_pairs(fst_inner),
-            other => {
-                println!("ext_group_from_pairs actually {:?}", other);
-                unreachable!()
-            }
+            _ => Err(ReggieError::unexpected_input(ext_pair).into()),
         }
     }
     fn as_string(&self) -> String {
@@ -310,84 +310,101 @@ impl Group {
             _ => None,
         }
     }
-    fn noncapturing_group_from_pairs(ext_pair: Pair<Rule>, inner: Pairs<'_, Rule>) -> Self {
+    fn noncapturing_group_from_pairs(ext_pair: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
         let flags = if let Some(matched_flags) = ext_pair.into_inner().next() {
-            GroupFlags::from_pair(matched_flags)
+            GroupFlags::from_pair(matched_flags)?
         } else {
             GroupFlags::empty()
         };
-        let components = SubPattern::inner_components(inner);
-        Self::Group {
+        let components = SubPattern::inner_components(inner)?;
+        Ok(Self::Group {
             ext: Some(GroupExt::NonCapturing),
             name: None,
             components,
             flags,
-        }
+        })
     }
-    fn atomic_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+    fn atomic_group_from_pairs(inner: Pairs<'_, Rule>) -> Result<Self> {
         Self::mk_ext_group(GroupExt::Atomic, inner)
     }
-    fn pos_lookahead_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+    fn pos_lookahead_group_from_pairs(inner: Pairs<'_, Rule>) -> Result<Self> {
         Self::mk_ext_group(GroupExt::PosLookahead, inner)
     }
-    fn neg_lookahead_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+    fn neg_lookahead_group_from_pairs(inner: Pairs<'_, Rule>) -> Result<Self> {
         Self::mk_ext_group(GroupExt::NegLookahead, inner)
     }
-    fn pos_lookbehind_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+    fn pos_lookbehind_group_from_pairs(inner: Pairs<'_, Rule>) -> Result<Self> {
         Self::mk_ext_group(GroupExt::PosLookbehind, inner)
     }
-    fn neg_lookbehind_group_from_pairs(inner: Pairs<'_, Rule>) -> Self {
+    fn neg_lookbehind_group_from_pairs(inner: Pairs<'_, Rule>) -> Result<Self> {
         Self::mk_ext_group(GroupExt::NegLookbehind, inner)
     }
-    fn named_backref_from_pairs(ext_pair: Pair<Rule>) -> Self {
+    fn named_backref_from_pairs(ext_pair: Pair<Rule>) -> Result<Self> {
+        let (_, char_ix) = ext_pair.line_col();
         let name = ext_pair
             .into_inner()
             .skip(1) // ?
             .next()
-            .unwrap()
+            .ok_or(ReggieError::unexpected_eoi(char_ix))?
             .into_inner()
             .next()
-            .unwrap()
+            .ok_or(ReggieError::unexpected_eoi(char_ix))?
             .as_str()
             .into();
-        Self::NamedBackref { name }
+        Ok(Self::NamedBackref { name })
     }
-    fn ternary_group_from_pairs(ext_pair: Pair<Rule>) -> Self {
+    fn ternary_group_from_pairs(ext_pair: Pair<Rule>) -> Result<Self> {
+        let (_, char_ix) = ext_pair.line_col();
         let mut inner = ext_pair.into_inner();
         let group = inner
             .next()
-            .unwrap()
+            .ok_or(ReggieError::unexpected_eoi(char_ix))?
             .into_inner()
             .skip(1) // (
             .next()
-            .unwrap();
+            .ok_or(ReggieError::unexpected_eoi(char_ix))?;
         let group_id = match group.as_rule() {
-            Rule::numbered_group_id => {
-                TernaryGroupId::Numbered(group.as_str().parse::<usize>().unwrap())
-            }
+            Rule::numbered_group_id => TernaryGroupId::Numbered(
+                group
+                    .as_str()
+                    .parse::<usize>()
+                    .map_err(|_| ReggieError::unexpected_input(group))?,
+            ),
             Rule::named_group_id => TernaryGroupId::Named(group.as_str().into()),
-            _ => Err(ReggieError::unexpected_input(group).into()),
+            _ => return Err(ReggieError::unexpected_input(group).into()),
         };
-        if let Some(yp) = inner.next() {
-            let yes_pat = Box::new(SubPattern::from_pair(inner.next().unwrap()));
-            // skip |
-            let no_pat = if inner.next().is_some() {
-                Some(Box::new(SubPattern::from_pair(inner.next().unwrap())))
+        if let Some(_) = inner.next() {
+            if let Some(yp_inner) = inner.next() {
+                let yes_pat = Box::new(SubPattern::from_pair(yp_inner)?);
+                // skip |
+                let no_pat = if inner.next().is_some() {
+                    Some(Box::new(SubPattern::from_pair(
+                        inner.next().ok_or(ReggieError::unexpected_eoi(char_ix))?,
+                    )?))
+                } else {
+                    None
+                };
+                Ok(Self::Ternary {
+                    group_id,
+                    yes_pat,
+                    no_pat,
+                })
             } else {
-                None
-            };
-            Self::Ternary {
-                group_id,
-                yes_pat,
-                no_pat,
+                Err(ReggieError::unexpected_eoi(char_ix).into())
             }
         } else {
-            Err(ReggieError::unexpecte
+            Err(ReggieError::unexpected_eoi(char_ix).into())
+        }
     }
     fn named_group_from_pairs(ext_pair: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
+        let (_, char_ix) = ext_pair.line_col();
         let mut ext_inner = ext_pair.into_inner();
         ext_inner.next(); // <
-        let name: String = ext_inner.next().unwrap().as_str().into();
+        let name: String = ext_inner
+            .next()
+            .ok_or(ReggieError::unexpected_eoi(char_ix))?
+            .as_str()
+            .into();
         let components = SubPattern::inner_components(inner)?;
         Ok(Self::Group {
             ext: None,
@@ -416,11 +433,9 @@ pub enum Element {
 impl Element {
     pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
         match pair.as_rule() {
-            Rule::char_set => Self::CharSet(CharSet::from_pair(pair)),
-            Rule::literals => Self::Literal(Literal::from_pair(pair)),
-            _ => {
-                Err(ReggieError::unexpected_input(pair).into())
-            }
+            Rule::char_set => Ok(Self::CharSet(CharSet::from_pair(pair)?)),
+            Rule::literals => Ok(Self::Literal(Literal::from_pair(pair)?)),
+            _ => Err(ReggieError::unexpected_input(pair).into()),
         }
     }
     pub fn as_string(&self) -> String {
@@ -441,13 +456,12 @@ impl Element {
 pub struct Literal(String);
 
 impl Literal {
-    pub fn from_pair(pair: Pair<Rule>) -> Self {
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
         let r = pair.as_rule();
         if let Rule::literals = r {
-            Self(String::from(pair.as_str()))
+            Ok(Self(String::from(pair.as_str())))
         } else {
-            println!("actually {:?}", r);
-            unreachable!()
+            Err(ReggieError::unexpected_input(pair).into())
         }
     }
     pub fn as_string(&self) -> String {
@@ -464,7 +478,7 @@ pub struct CharSet {
 }
 
 impl CharSet {
-    pub fn from_pair(pair: Pair<Rule>) -> Self {
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
         let r = pair.as_rule();
         if let Rule::char_set = r {
             let mut char_ranges = DisjointRange::empty();
@@ -474,17 +488,34 @@ impl CharSet {
                 match p.as_rule() {
                     Rule::set_negation => negated = true,
                     Rule::char_range => {
+                        let (_, char_ix) = p.line_col();
                         let mut inner = p.into_inner();
-                        let low = inner.next().unwrap().as_str().chars().nth(0).unwrap();
+                        let low = inner
+                            .next()
+                            .ok_or(ReggieError::unexpected_eoi(char_ix))?
+                            .as_str()
+                            .chars()
+                            .nth(0)
+                            .ok_or(ReggieError::unexpected_eoi(char_ix))?;
                         inner.next();
-                        let high = inner.next().unwrap().as_str().chars().nth(0).unwrap();
+                        let high = inner
+                            .next()
+                            .ok_or(ReggieError::unexpected_eoi(char_ix))?
+                            .as_str()
+                            .chars()
+                            .nth(0)
+                            .ok_or(ReggieError::unexpected_eoi(char_ix))?;
                         char_ranges.add_unary_range(UnaryRange::new_unchecked(low, high));
                     }
                     Rule::hyphen => {
                         char_ranges.add_unary_range(UnaryRange::new_unchecked('-', '-'))
                     }
                     Rule::set_literal => {
-                        let c = p.as_str().chars().nth(0).unwrap();
+                        let c = p
+                            .as_str()
+                            .chars()
+                            .nth(0)
+                            .ok_or(ReggieError::unexpected_eoi(p.line_col().1))?;
                         char_ranges.add_unary_range(UnaryRange::new_unchecked(c, c));
                     }
                     Rule::escaped_hyphen => {
@@ -494,22 +525,19 @@ impl CharSet {
                         char_ranges.add_unary_range(UnaryRange::new_unchecked('^', '^'));
                     }
                     Rule::char_class => {
-                        let cls = CharClass::from_pair(p);
+                        let cls = CharClass::from_pair(p)?;
                         char_ranges.add_disjoint_range(cls.to_range());
                     }
                     Rule::l_sq | Rule::r_sq => continue,
-                    _ => {
-                        println!("got {:}", p);
-                        unreachable!()
-                    }
+                    _ => return Err(ReggieError::unexpected_input(p).into()),
                 };
             }
             if negated {
-                Self {
+                Ok(Self {
                     char_ranges: char_ranges.complement(),
-                }
+                })
             } else {
-                Self { char_ranges }
+                Ok(Self { char_ranges })
             }
         } else {
             println!("actually {:?}", r);
@@ -565,11 +593,15 @@ impl CharClass {
     fn word_range() -> DisjointRange<char> {
         DisjointRange::from_bounds_unchecked([('a', 'z'), ('A', 'Z'), ('0', '9')])
     }
-    pub fn from_pair(pair: Pair<Rule>) -> Self {
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
+        let (_, char_ix) = pair.line_col();
         let mut inner = pair.into_inner();
         inner.next(); // backslash
-        let c = inner.next().unwrap().as_str();
-        match c {
+        let c = inner
+            .next()
+            .ok_or(ReggieError::unexpected_eoi(char_ix))?
+            .as_str();
+        Ok(match c {
             "d" => Self {
                 class: CClass::D,
                 negated: false,
@@ -598,7 +630,7 @@ impl CharClass {
                 println!("c {:?}", c);
                 unreachable!()
             }
-        }
+        })
     }
 }
 
@@ -615,49 +647,61 @@ pub enum Q {
 }
 
 impl Q {
-    fn n_from_pair(inner: &mut Pairs<'_, Rule>) -> Self {
-        let nt_match = inner.next().unwrap();
+    fn n_from_pair(inner: &mut Pairs<'_, Rule>, char_ix: usize) -> Result<Self> {
+        let nt_match = inner.next().ok_or(ReggieError::unexpected_eoi(char_ix))?;
+        let (_, nt_char_ix) = nt_match.line_col();
         let res = match nt_match.as_rule() {
-            Rule::n_exact => Q::NExact(nt_match.as_str().parse::<usize>().unwrap()),
+            Rule::n_exact => Ok(Q::NExact(
+                nt_match
+                    .as_str()
+                    .parse::<usize>()
+                    .map_err(|_| ReggieError::unexpected_input(nt_match))?,
+            )),
             Rule::n_between => {
+                let ent = nt_match.clone();
                 let mut vals = nt_match.as_str().split(',');
-                let min = vals.next().unwrap().parse::<usize>().unwrap();
-                let max = vals.next().unwrap().parse::<usize>().unwrap();
-                Q::NTimes {
+                let min = vals
+                    .next()
+                    .ok_or(ReggieError::unexpected_eoi(nt_char_ix))?
+                    .parse::<usize>()
+                    .map_err(|_| ReggieError::unexpected_input(nt_match))?;
+                let max = vals
+                    .next()
+                    .ok_or(ReggieError::unexpected_eoi(nt_char_ix))?
+                    .parse::<usize>()
+                    .map_err(|_| ReggieError::unexpected_input(ent))?;
+                Ok(Q::NTimes {
                     min: Some(min),
                     max: Some(max),
-                }
+                })
             }
             Rule::n_at_least => {
                 let min = nt_match
                     .as_str()
                     .strip_suffix(',')
-                    .unwrap()
+                    .ok_or(ReggieError::unexpected_eoi(nt_char_ix))?
                     .parse::<usize>()
-                    .unwrap();
-                Q::NTimes {
+                    .map_err(|_| ReggieError::unexpected_input(nt_match))?;
+                Ok(Q::NTimes {
                     min: Some(min),
                     max: None,
-                }
+                })
             }
             Rule::n_at_most => {
                 let max = nt_match
                     .as_str()
                     .strip_prefix(',')
-                    .unwrap()
+                    .ok_or(ReggieError::unexpected_eoi(nt_char_ix))?
                     .parse::<usize>()
-                    .unwrap();
-                Q::NTimes {
+                    .map_err(|_| ReggieError::unexpected_input(nt_match))?;
+                Ok(Q::NTimes {
                     min: None,
                     max: Some(max),
-                }
+                })
             }
-            other => {
-                println!("actually {:?}", other);
-                unreachable!()
-            }
+            _ => Err(ReggieError::unexpected_input(nt_match)),
         };
-        res
+        Ok(res?)
     }
 }
 
@@ -675,8 +719,10 @@ pub struct Quantifier {
 }
 
 impl Quantifier {
-    pub fn from_pair(pair: Pair<Rule>) -> Self {
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
+        let (_, char_ix) = pair.line_col();
         let r = pair.as_rule();
+        let ep = pair.clone();
         let mut pair_inner = pair.into_inner();
         if let Rule::quantifier = r {
             let mut quantifier = None;
@@ -696,32 +742,26 @@ impl Quantifier {
                         break;
                     }
                     Rule::l_brace => {
-                        let _ = quantifier.insert(Quantifier::new(Q::n_from_pair(&mut pair_inner)));
+                        let _ = quantifier
+                            .insert(Quantifier::new(Q::n_from_pair(&mut pair_inner, char_ix)?));
                         break;
                     }
                     Rule::r_brace => break,
-                    other => {
-                        println!("q_rule actually {:?}", other);
-                        unreachable!()
-                    }
+                    _ => return Err(ReggieError::unexpected_input(q_match).into()),
                 }
             }
-            let mut quantifier = quantifier.unwrap();
+            let mut quantifier = quantifier.ok_or(ReggieError::unexpected_eoi(char_ix))?;
             while let Some(greed_match) = pair_inner.next() {
                 match greed_match.as_rule() {
                     Rule::question_mark => quantifier.set_greed(G::NonGreedy),
                     Rule::plus => quantifier.set_greed(G::Possessive),
                     Rule::r_brace => continue,
-                    other => {
-                        println!("greed_match actually {:?}", other);
-                        unreachable!()
-                    }
+                    _ => return Err(ReggieError::unexpected_input(greed_match).into()),
                 }
             }
-            quantifier
+            Ok(quantifier)
         } else {
-            println!("quantifier actually {:?}", r);
-            unreachable!()
+            Err(ReggieError::unexpected_input(ep).into())
         }
     }
     pub fn as_string(&self) -> String {
@@ -813,16 +853,16 @@ impl Flag {
             Flag::Verbose => "x",
         }
     }
-    pub fn from_char(c: char) -> Self {
+    pub fn from_char(c: char) -> Result<Self> {
         match c {
-            'a' => Self::Ascii,
-            'i' => Self::Ignorecase,
-            'L' => Self::Locale,
-            'm' => Self::Multiline,
-            's' => Self::Dotall,
-            'u' => Self::Unicode,
-            'x' => Self::Verbose,
-            _ => unreachable!(),
+            'a' => Ok(Self::Ascii),
+            'i' => Ok(Self::Ignorecase),
+            'L' => Ok(Self::Locale),
+            'm' => Ok(Self::Multiline),
+            's' => Ok(Self::Dotall),
+            'u' => Ok(Self::Unicode),
+            'x' => Ok(Self::Verbose),
+            _ => Err(ReggieError::InvalidFlag { bad_flag: c }.into()),
         }
     }
     pub fn as_string(&self) -> String {
@@ -851,13 +891,14 @@ impl Flags {
         s
     }
     fn from_whole_pattern_pair(pair: Pair<Rule>) -> Result<Self> {
+        let (_, char_ix) = pair.line_col();
         let mut inner = pair.into_inner();
         inner.next(); // (?
-        let flag_match = inner.next().unwrap();
+        let flag_match = inner.next().ok_or(ReggieError::unexpected_eoi(char_ix))?;
         if flag_match.as_rule() == Rule::flags {
             let mut flags = Flags::new();
             for c in flag_match.as_str().chars() {
-                flags.add(Flag::from_char(c));
+                flags.add(Flag::from_char(c)?);
             }
             Ok(flags)
         } else {
@@ -886,19 +927,24 @@ impl GroupFlags {
         self.pos.is_empty() && self.neg.is_empty()
     }
 
-    fn from_pair(pair: Pair<Rule>) -> Self {
+    fn from_pair(pair: Pair<Rule>) -> Result<Self> {
         let mut pos = Flags::new();
         let mut neg = Flags::new();
+        let (_, char_ix) = pair.line_col();
         let mut s = pair.as_str().split('-');
-        for c in s.next().unwrap().chars() {
-            pos.add(Flag::from_char(c));
+        for c in s
+            .next()
+            .ok_or(ReggieError::unexpected_eoi(char_ix))?
+            .chars()
+        {
+            pos.add(Flag::from_char(c)?);
         }
         if let Some(neg_flag_str) = s.next() {
             for c in neg_flag_str.chars() {
-                neg.add(Flag::from_char(c))
+                neg.add(Flag::from_char(c)?)
             }
         };
-        Self { pos, neg }
+        Ok(Self { pos, neg })
     }
     fn as_string(&self) -> String {
         if !self.neg.0.is_empty() {
@@ -918,13 +964,17 @@ pub enum ZeroWidthLiteral {
 }
 
 impl ZeroWidthLiteral {
-    pub fn from_pair(pair: Pair<Rule>) -> Self {
-        match pair.as_str() {
-            "\\A" | "\\a" => Self::InputStart,
-            "\\b" => Self::WordBoundary,
-            "\\B" => Self::NotWordBoundary,
-            "\\Z" | "\\z" => Self::InputEnd,
-            _ => unreachable!(),
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
+        let s = pair.as_str();
+        match s {
+            "\\A" | "\\a" => Ok(Self::InputStart),
+            "\\b" => Ok(Self::WordBoundary),
+            "\\B" => Ok(Self::NotWordBoundary),
+            "\\Z" | "\\z" => Ok(Self::InputEnd),
+            _ => Err(ReggieError::InvalidLiteral {
+                bad_literal: s.into(),
+            }
+            .into()),
         }
     }
     pub fn as_string(&self) -> String {

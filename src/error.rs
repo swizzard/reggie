@@ -4,10 +4,16 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ReggieError {
+    #[error(transparent)]
+    ParsingError(#[from] pest::error::Error<Rule>),
     #[error("Unexpected input {input} at character {char_ix:?}")]
     UnexpectedInput { input: String, char_ix: usize },
     #[error("Unexpected end of input at character {char_ix:?}")]
     UnexpectedEndOfInput { char_ix: usize },
+    #[error("Invalid flag {bad_flag}")]
+    InvalidFlag { bad_flag: char },
+    #[error("Invalid literal {bad_literal}")]
+    InvalidLiteral { bad_literal: String },
 }
 
 impl ReggieError {
