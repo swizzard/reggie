@@ -1,14 +1,17 @@
 use crate::{error::ReggieError, parser::Rule};
 use anyhow::Result;
 use pest::iterators::Pair;
-use std::collections::HashSet;
+use std::{
+    cmp::{Ord, Ordering, PartialOrd},
+    collections::BTreeSet,
+};
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Flags(HashSet<Flag>);
+pub struct Flags(BTreeSet<Flag>);
 
 impl Flags {
     pub(crate) fn new() -> Self {
-        Self(HashSet::new())
+        Self(BTreeSet::new())
     }
     pub(crate) fn add(&mut self, flag: Flag) {
         self.0.insert(flag);
@@ -88,7 +91,7 @@ impl GroupFlags {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Flag {
     Ascii,
     Ignorecase,
@@ -97,6 +100,34 @@ pub enum Flag {
     Dotall,
     Unicode,
     Verbose,
+}
+
+impl PartialOrd for Flag {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Flag {
+    fn cmp(&self, other: &Self) -> Ordering {
+        use Flag::*;
+        match (self, other) {
+            (Ascii, Ascii) => Ordering::Equal,
+            (Ascii, _) => Ordering::Greater,
+            (Ignorecase, Ignorecase) => Ordering::Equal,
+            (Ignorecase, _) => Ordering::Greater,
+            (Locale, Locale) => Ordering::Equal,
+            (Locale, _) => Ordering::Equal,
+            (Multiline, Multiline) => Ordering::Equal,
+            (Multiline, _) => Ordering::Equal,
+            (Dotall, Dotall) => Ordering::Equal,
+            (Dotall, _) => Ordering::Equal,
+            (Unicode, Unicode) => Ordering::Equal,
+            (Unicode, _) => Ordering::Equal,
+            (Verbose, Verbose) => Ordering::Equal,
+            (Verbose, _) => Ordering::Equal,
+        }
+    }
 }
 
 impl Flag {
