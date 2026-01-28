@@ -163,3 +163,17 @@ impl CharClass {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_char_set_as_string() {
+        let cs = CharSet {
+            char_ranges: DisjointRange::from_bounds_unchecked([('a', 'c'), ('e', 'g')]),
+        };
+        let expected = String::from("[a-ce-g]");
+        assert_eq!(expected, cs.as_string())
+    }
+}

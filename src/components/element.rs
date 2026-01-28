@@ -80,3 +80,36 @@ impl ZeroWidthLiteral {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_literal_min_match_len() {
+        let l = Literal("foo".into());
+        assert_eq!(3, l.min_match_len())
+    }
+    #[test]
+    fn test_literal_as_string() {
+        let foo: String = "foo".into();
+        let l = Literal(foo.clone());
+        assert_eq!(foo, l.as_string());
+    }
+    #[test]
+    fn test_zwl_as_string() {
+        assert_eq!(
+            String::from("\\a"),
+            ZeroWidthLiteral::InputStart.as_string()
+        );
+        assert_eq!(String::from("\\z"), ZeroWidthLiteral::InputEnd.as_string());
+        assert_eq!(
+            String::from("\\B"),
+            ZeroWidthLiteral::NotWordBoundary.as_string()
+        );
+        assert_eq!(
+            String::from("\\b"),
+            ZeroWidthLiteral::WordBoundary.as_string()
+        );
+    }
+}

@@ -158,3 +158,19 @@ impl Flag {
         String::from(self.as_str())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    // #[test]
+    // fn test_flags_as_string() {
+    //     let flags = Flags(HashSet::from([
+    //         Flag::Ignorecase,
+    //         Flag::Multiline,
+    //         Flag::Dotall,
+    //     ]));
+    //     let expected = String::from("?msi");
+    //     assert_eq!(expected, flags.as_string())
+    // }
+}
