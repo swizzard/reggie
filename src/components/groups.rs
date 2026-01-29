@@ -99,7 +99,7 @@ impl Group {
     }
     pub fn as_string(&self) -> String {
         match self {
-            Group::NamedBackref { name } => format!("(?P={}", name),
+            Group::NamedBackref { name } => format!("(?P={})", name),
             Group::Ternary {
                 group_id,
                 yes_pat,
@@ -138,6 +138,7 @@ impl Group {
                 for component in cs.iter() {
                     write!(&mut s, "{}", component.as_string()).unwrap();
                 }
+                write!(&mut s, ")").unwrap();
                 s
             }
             Group::Group {
@@ -316,4 +317,33 @@ impl Group {
             flags: GroupFlags::empty(),
         })
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_group_ext_as_string() {
+        assert_eq!(String::from("?:"), GroupExt::NonCapturing.as_string());
+        assert_eq!(String::from("?>"), GroupExt::Atomic.as_string());
+        assert_eq!(String::from("?="), GroupExt::PosLookahead.as_string());
+        assert_eq!(String::from("?!"), GroupExt::NegLookahead.as_string());
+        assert_eq!(String::from("?<="), GroupExt::PosLookbehind.as_string());
+        assert_eq!(String::from("?<!"), GroupExt::NegLookbehind.as_string());
+    }
+    #[test]
+    fn test_group_as_string_named_backref() {
+        assert_eq!(
+            String::from("(?P=foo)"),
+            Group::NamedBackref { name: "foo".into() }.as_string()
+        );
+    }
+    // #[test]
+    // fn test_group_as_string_ternary() {
+    //     todo!()
+    // }
+    // #[test]
+    // fn test_group_as_string_group() {
+    //     todo!()
+    // }
 }

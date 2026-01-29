@@ -20,12 +20,16 @@ impl Flags {
         self.0.remove(flag);
     }
     pub fn as_string(&self) -> String {
-        let mut s = String::from("?");
+        format!("?{}", self.flags_string())
+    }
+    fn flags_string(&self) -> String {
+        let mut s = String::new();
         for flag in self.0.iter() {
             s.push_str(flag.as_str())
         }
         s
     }
+
     pub(crate) fn from_whole_pattern_pair(pair: Pair<Rule>) -> Result<Self> {
         let (_, char_ix) = pair.line_col();
         let mut inner = pair.into_inner();
@@ -84,7 +88,7 @@ impl GroupFlags {
     }
     pub fn as_string(&self) -> String {
         if !self.neg.0.is_empty() {
-            format!("{}-{}", self.pos.as_string(), self.neg.as_string())
+            format!("?{}-{}", self.pos.flags_string(), self.neg.flags_string())
         } else {
             self.pos.as_string()
         }
@@ -163,14 +167,23 @@ impl Flag {
 mod test {
     use super::*;
 
-    // #[test]
-    // fn test_flags_as_string() {
-    //     let flags = Flags(HashSet::from([
-    //         Flag::Ignorecase,
-    //         Flag::Multiline,
-    //         Flag::Dotall,
-    //     ]));
-    //     let expected = String::from("?msi");
-    //     assert_eq!(expected, flags.as_string())
-    // }
+    #[test]
+    fn test_flags_as_string() {
+        let flags = Flags(BTreeSet::from([
+            Flag::Ignorecase,
+            Flag::Multiline,
+            Flag::Dotall,
+        ]));
+        let expected = String::from("?ims");
+        assert_eq!(expected, flags.as_string())
+    }
+    #[test]
+    fn test_group_flags_as_string() {
+        let flags = GroupFlags {
+            pos: Flags(BTreeSet::from([Flag::Ignorecase, Flag::Multiline])),
+            neg: Flags(BTreeSet::from([Flag::Dotall])),
+        };
+        let expected = String::from("?im-s");
+        assert_eq!(expected, flags.as_string())
+    }
 }

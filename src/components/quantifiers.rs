@@ -1,6 +1,7 @@
 use crate::{error::ReggieError, parser::Rule};
 use anyhow::Result;
 use pest::iterators::{Pair, Pairs};
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Q {
     ZeroOrOne,
@@ -169,10 +170,10 @@ impl Quantifier {
         !matches!(self.greed, G::NonGreedy)
     }
     pub fn is_finite(&self) -> bool {
-        match self.quantifier {
-            Q::ZeroOrMore | Q::OneOrMore => false,
-            _ => true,
-        }
+        matches!(
+            self.quantifier,
+            Q::ZeroOrOne | Q::NExact(_) | Q::NTimes { max: Some(_), .. }
+        )
     }
     pub fn set_greed(&mut self, greed: G) {
         self.greed = greed;
@@ -188,11 +189,185 @@ impl Quantifier {
             Q::NTimes { min, .. } => min.unwrap_or_default(),
         }
     }
-
     fn new(quantifier: Q) -> Self {
         Self {
             quantifier,
             greed: G::Greedy,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_quantifier_as_string() {
+        assert_eq!(
+            String::from("?"),
+            Quantifier {
+                quantifier: Q::ZeroOrOne,
+                greed: G::Greedy
+            }
+            .as_string()
+        );
+        assert_eq!(
+            String::from("??"),
+            Quantifier {
+                quantifier: Q::ZeroOrOne,
+                greed: G::NonGreedy
+            }
+            .as_string()
+        );
+        assert_eq!(
+            String::from("?+"),
+            Quantifier {
+                quantifier: Q::ZeroOrOne,
+                greed: G::Possessive
+            }
+            .as_string()
+        );
+        assert_eq!(
+            String::from("*"),
+            Quantifier {
+                quantifier: Q::ZeroOrMore,
+                greed: G::Greedy
+            }
+            .as_string()
+        );
+        assert_eq!(
+            String::from("+"),
+            Quantifier {
+                quantifier: Q::OneOrMore,
+                greed: G::Greedy
+            }
+            .as_string()
+        );
+        assert_eq!(
+            String::from("{1}"),
+            Quantifier {
+                quantifier: Q::NExact(1),
+                greed: G::Greedy
+            }
+            .as_string()
+        );
+        assert_eq!(
+            String::from("{2,}"),
+            Quantifier {
+                quantifier: Q::NTimes {
+                    min: Some(2),
+                    max: None
+                },
+                greed: G::Greedy
+            }
+            .as_string()
+        );
+        assert_eq!(
+            String::from("{,2}"),
+            Quantifier {
+                quantifier: Q::NTimes {
+                    min: None,
+                    max: Some(2)
+                },
+                greed: G::Greedy
+            }
+            .as_string()
+        );
+        assert_eq!(
+            String::from("{2,4}"),
+            Quantifier {
+                quantifier: Q::NTimes {
+                    min: Some(2),
+                    max: Some(4)
+                },
+                greed: G::Greedy
+            }
+            .as_string()
+        );
+    }
+    #[test]
+    fn test_quantifier_is_greedy() {
+        assert!(
+            Quantifier {
+                quantifier: Q::ZeroOrOne,
+                greed: G::Greedy
+            }
+            .is_greedy()
+        );
+        assert!(
+            !Quantifier {
+                quantifier: Q::ZeroOrOne,
+                greed: G::NonGreedy
+            }
+            .is_greedy()
+        );
+        assert!(
+            Quantifier {
+                quantifier: Q::ZeroOrOne,
+                greed: G::Possessive
+            }
+            .is_greedy()
+        );
+    }
+    #[test]
+    fn test_quantifier_is_finite() {
+        assert!(
+            Quantifier {
+                quantifier: Q::ZeroOrOne,
+                greed: G::Greedy
+            }
+            .is_finite()
+        );
+        assert!(
+            !Quantifier {
+                quantifier: Q::ZeroOrMore,
+                greed: G::Greedy
+            }
+            .is_finite()
+        );
+        assert!(
+            !Quantifier {
+                quantifier: Q::OneOrMore,
+                greed: G::Greedy
+            }
+            .is_finite()
+        );
+        assert!(
+            Quantifier {
+                quantifier: Q::NExact(3),
+                greed: G::Greedy
+            }
+            .is_finite()
+        );
+        assert!(
+            !Quantifier {
+                quantifier: Q::NTimes {
+                    min: Some(3),
+                    max: None
+                },
+                greed: G::Greedy
+            }
+            .is_finite()
+        );
+        assert!(
+            Quantifier {
+                quantifier: Q::NTimes {
+                    min: None,
+                    max: Some(3)
+                },
+                greed: G::Greedy
+            }
+            .is_finite()
+        );
+        assert!(
+            Quantifier {
+                quantifier: Q::NTimes {
+                    min: Some(2),
+                    max: Some(3)
+                },
+                greed: G::Greedy
+            }
+            .is_finite()
+        );
     }
 }
