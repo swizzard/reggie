@@ -4,63 +4,20 @@ use pest::iterators::Pair;
 use std::{
     cmp::{Ord, Ordering, PartialOrd},
     collections::BTreeSet,
+    fmt::Write,
 };
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Flags(BTreeSet<Flag>);
+pub struct Flags {
+    pos: BTreeSet<Flag>,
+    neg: BTreeSet<Flag>,
+}
 
 impl Flags {
-    pub(crate) fn new() -> Self {
-        Self(BTreeSet::new())
-    }
-    pub(crate) fn add(&mut self, flag: Flag) {
-        self.0.insert(flag);
-    }
-    pub(crate) fn remove(&mut self, flag: &Flag) {
-        self.0.remove(flag);
-    }
-    pub fn as_string(&self) -> String {
-        format!("?{}", self.flags_string())
-    }
-    fn flags_string(&self) -> String {
-        let mut s = String::new();
-        for flag in self.0.iter() {
-            s.push_str(flag.as_str())
-        }
-        s
-    }
-
-    pub(crate) fn from_whole_pattern_pair(pair: Pair<Rule>) -> Result<Self> {
-        let (_, char_ix) = pair.line_col();
-        let mut inner = pair.into_inner();
-        inner.next(); // (?
-        let flag_match = inner.next().ok_or(ReggieError::unexpected_eoi(char_ix))?;
-        if flag_match.as_rule() == Rule::flags {
-            let mut flags = Flags::new();
-            for c in flag_match.as_str().chars() {
-                flags.add(Flag::from_char(c)?);
-            }
-            Ok(flags)
-        } else {
-            Err(ReggieError::unexpected_input(flag_match).into())
-        }
-    }
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct GroupFlags {
-    pos: Flags,
-    neg: Flags,
-}
-
-impl GroupFlags {
     pub(crate) fn empty() -> Self {
         Self {
-            pos: Flags::new(),
-            neg: Flags::new(),
+            pos: BTreeSet::new(),
+            neg: BTreeSet::new(),
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -68,8 +25,8 @@ impl GroupFlags {
     }
 
     pub(crate) fn from_pair(pair: Pair<Rule>) -> Result<Self> {
-        let mut pos = Flags::new();
-        let mut neg = Flags::new();
+        let mut pos = BTreeSet::new();
+        let mut neg = BTreeSet::new();
         let (_, char_ix) = pair.line_col();
         let mut s = pair.as_str().split('-');
         for c in s
@@ -77,21 +34,47 @@ impl GroupFlags {
             .ok_or(ReggieError::unexpected_eoi(char_ix))?
             .chars()
         {
-            pos.add(Flag::from_char(c)?);
+            pos.insert(Flag::from_char(c)?);
         }
         if let Some(neg_flag_str) = s.next() {
             for c in neg_flag_str.chars() {
-                neg.add(Flag::from_char(c)?)
+                neg.insert(Flag::from_char(c)?);
             }
         };
         Ok(Self { pos, neg })
     }
-    pub fn as_string(&self) -> String {
-        if !self.neg.0.is_empty() {
-            format!("?{}-{}", self.pos.flags_string(), self.neg.flags_string())
+    pub(crate) fn from_whole_pattern_pair(pair: Pair<Rule>) -> Result<Self> {
+        let (_, char_ix) = pair.line_col();
+        let mut inner = pair.into_inner();
+        inner.next(); // (?
+        let flag_match = inner.next().ok_or(ReggieError::unexpected_eoi(char_ix))?;
+        if flag_match.as_rule() == Rule::flags {
+            let mut flags = BTreeSet::new();
+            for c in flag_match.as_str().chars() {
+                flags.insert(Flag::from_char(c)?);
+            }
+            Ok(Self {
+                pos: flags,
+                neg: BTreeSet::new(),
+            })
         } else {
-            self.pos.as_string()
+            Err(ReggieError::unexpected_input(flag_match).into())
         }
+    }
+    pub(crate) fn as_string(&self) -> String {
+        let mut s = format!(
+            "?{}",
+            self.pos.iter().map(|f| f.as_str()).collect::<String>()
+        );
+        if !self.neg.is_empty() {
+            write!(
+                s,
+                "-{}",
+                self.neg.iter().map(|f| f.as_str()).collect::<String>()
+            )
+            .unwrap();
+        }
+        s
     }
 }
 
@@ -168,20 +151,10 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_flags_as_string() {
-        let flags = Flags(BTreeSet::from([
-            Flag::Ignorecase,
-            Flag::Multiline,
-            Flag::Dotall,
-        ]));
-        let expected = String::from("?ims");
-        assert_eq!(expected, flags.as_string())
-    }
-    #[test]
     fn test_group_flags_as_string() {
-        let flags = GroupFlags {
-            pos: Flags(BTreeSet::from([Flag::Ignorecase, Flag::Multiline])),
-            neg: Flags(BTreeSet::from([Flag::Dotall])),
+        let flags = Flags {
+            pos: BTreeSet::from([Flag::Ignorecase, Flag::Multiline]),
+            neg: BTreeSet::from([Flag::Dotall]),
         };
         let expected = String::from("?im-s");
         assert_eq!(expected, flags.as_string())

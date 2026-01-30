@@ -1,5 +1,5 @@
 use crate::{
-    components::{flags::GroupFlags, pattern::SubPattern},
+    components::{flags::Flags, pattern::SubPattern},
     error::ReggieError,
     parser::Rule,
 };
@@ -56,7 +56,7 @@ pub enum Group {
     },
     Group {
         ext: Option<GroupExt>,
-        flags: GroupFlags,
+        flags: Flags,
         name: Option<String>,
         components: Vec<SubPattern>,
     },
@@ -72,7 +72,7 @@ impl Group {
         }
         Ok(Self::Group {
             ext: None,
-            flags: GroupFlags::empty(),
+            flags: Flags::empty(),
             name: None,
             components: c,
         })
@@ -153,7 +153,7 @@ impl Group {
             } => unreachable!(),
         }
     }
-    pub fn flags(&self) -> Option<GroupFlags> {
+    pub fn flags(&self) -> Option<Flags> {
         match self {
             Self::Group {
                 components, flags, ..
@@ -207,9 +207,9 @@ impl Group {
         inner: Pairs<'_, Rule>,
     ) -> Result<Self> {
         let flags = if let Some(matched_flags) = ext_pair.into_inner().next() {
-            GroupFlags::from_pair(matched_flags)?
+            Flags::from_pair(matched_flags)?
         } else {
-            GroupFlags::empty()
+            Flags::empty()
         };
         let components = SubPattern::inner_components(inner)?;
         Ok(Self::Group {
@@ -303,7 +303,7 @@ impl Group {
         let components = SubPattern::inner_components(inner)?;
         Ok(Self::Group {
             ext: None,
-            flags: GroupFlags::empty(),
+            flags: Flags::empty(),
             name: Some(name),
             components,
         })
@@ -314,7 +314,7 @@ impl Group {
             ext: Some(ext),
             name: None,
             components,
-            flags: GroupFlags::empty(),
+            flags: Flags::empty(),
         })
     }
 }

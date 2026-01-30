@@ -2,7 +2,7 @@ use crate::{
     components::{
         alternatives::Alternatives,
         element::{Element, ZeroWidthLiteral},
-        flags::{Flags, GroupFlags},
+        flags::Flags,
         groups::Group,
         quantifiers::Quantifier,
     },
@@ -21,7 +21,7 @@ pub struct Pattern {
 impl Pattern {
     pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
         let mut inner = pair.into_inner();
-        let mut flags = Flags::new();
+        let mut flags = Flags::empty();
         let mut sub_patterns = Vec::new();
         while let Some(matched) = inner.next() {
             match matched.as_rule() {
@@ -138,7 +138,7 @@ impl SubPattern {
             _ => true,
         }
     }
-    pub fn flags(&self) -> Option<GroupFlags> {
+    pub fn flags(&self) -> Option<Flags> {
         match self {
             SubPattern::Group(g) => g.flags(),
             _ => None,

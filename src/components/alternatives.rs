@@ -1,4 +1,4 @@
-use crate::{components::pattern::SubPattern, error::ReggieError, parser::Rule};
+use crate::{components::pattern::SubPattern, parser::Rule};
 use anyhow::Result;
 use pest::iterators::Pair;
 
