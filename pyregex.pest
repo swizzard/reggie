@@ -37,7 +37,7 @@ literal = _{
 }
 zero_width_literal = @{ backslash ~ ("A" | "b" | "B" | "z" | "Z") }
 
-set_literal = { literal |  dollar | dot | l_parens | r_parens | l_brace | r_brace | plus | question_mark }
+set_literal = { literal | pipe | dollar | dot | l_parens | r_parens | l_brace | r_brace | plus | question_mark }
 set_negation = @{ caret }
 char_class = { backslash ~ char_class_label }
 char_class_label = { "d" | "D" | "s" | "S" | "w" | "W" }
@@ -94,11 +94,17 @@ group = { l_parens ~ group_ext? ~ sub_pattern* ~ r_parens }
 comment_content = { (!r_parens ~ ANY)+ }
 comment_group = { l_parens ~ question_mark ~ hash ~ comment_content ~ r_parens }
 
-sub_pattern = {
+alt = _{ pipe ~ single_sub_pattern }
+
+alternatives = { single_sub_pattern ~ alt+ }
+
+single_sub_pattern = _{
     zero_width_literal |
     comment_group |
     group |
     ((literals | char_set) ~ quantifier?) |
     backref
 }
+
+sub_pattern = { alternatives | single_sub_pattern }
 regex = { whole_pattern_flags? ~ sub_pattern+ }

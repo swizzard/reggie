@@ -8,28 +8,28 @@ however, regexes have [a reputation for being difficult](https://regex.info/blog
 
 the ultimate goal is rust & python libraries to let users build and manipulate regular expressions that are [compatible with python's regex dsl](https://docs.python.org/3/library/re.html#regular-expression-syntax).
 
-we're _not_ implementing an actual regex engine; `reggie`s outputs will need to be passed into [`re.compile`](https://docs.python.org/3/library/re.html#re.compile) v.s.
+importantly, we're _not_ implementing an actual regex engine; `reggie`'s outputs will need to be passed into [`re.compile`](https://docs.python.org/3/library/re.html#re.compile) v.s.
 
 ## progress
-for what i hope are obvious reasons the mvp is ascii-only.
+for what i hope are obvious reasons the mvp ~~is~~ [might be](https://github.com/swizzard/ucd-general-category-ranges) ascii-only.
 
 - [ ] parser
   - [x] literals
-  - [ ] zero-width literals
-    - [ ] `\A`
-    - [ ] `\b`
-    - [ ] `\B`
-    - [ ] `\z`/`\Z`
-  - [ ] backref
+  - [x] zero-width literals
+    - [x] `\A`
+    - [x] `\b`
+    - [x] `\B`
+    - [x] `\z`/`\Z`
+  - [x] backref
   - [x] character ranges
-  - [ ] alternation
-  - [ ] groups
-    - [ ] \(inline\) flags
-    - [ ] named
-    - [ ] named backref
-    - [ ] atomic
-    - [ ] positive/negative lookahead/-behind
-    - [ ] ternary
+  - [x] alternation
+  - [x] groups
+    - [x] \(inline\) flags
+    - [x] named
+    - [x] named backref
+    - [x] atomic
+    - [x] positive/negative lookahead/-behind
+    - [x] ternary
   - [ ] different rules for verbose mode
 - [ ] functionality
   - [ ] `(&self..._with_...-> Self` methods in addition to `&mut self`

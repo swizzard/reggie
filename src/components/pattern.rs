@@ -1,5 +1,6 @@
 use crate::{
     components::{
+        alternatives::Alternatives,
         element::{Element, ZeroWidthLiteral},
         flags::{Flags, GroupFlags},
         groups::Group,
@@ -10,6 +11,7 @@ use crate::{
 };
 use anyhow::Result;
 use pest::iterators::{Pair, Pairs};
+
 #[derive(Clone, Debug)]
 pub struct Pattern {
     flags: Flags,
@@ -66,6 +68,7 @@ impl Pattern {
 
 #[derive(Clone, Debug)]
 pub enum SubPattern {
+    Alternatives(Alternatives),
     Quantifiable {
         el: Element,
         quantifier: Option<Quantifier>,
@@ -80,19 +83,27 @@ impl SubPattern {
         let (_, char_ix) = pair.line_col();
         let mut inner = pair.into_inner();
         if let Some(p) = inner.next() {
-            match p.as_rule() {
-                Rule::literals | Rule::char_set => SubPattern::quantifiable_from_pair(p, inner),
-                Rule::zero_width_literal => SubPattern::zwl_from_pair(p),
-                Rule::comment_group => SubPattern::comment_group_from_pair(p),
-                Rule::group => SubPattern::group_from_pair(p),
-                _ => Err(ReggieError::unexpected_input(p).into()),
-            }
+            SubPattern::single_from_pair(p, &mut inner)
         } else {
             Err(ReggieError::unexpected_eoi(char_ix).into())
         }
     }
+    pub fn single_from_pair(pair: Pair<Rule>, inner: &mut Pairs<'_, Rule>) -> Result<Self> {
+        match pair.as_rule() {
+            Rule::alternatives => SubPattern::alternatives_from_pair(pair),
+            Rule::literals | Rule::char_set => SubPattern::quantifiable_from_pair(pair, inner),
+            Rule::zero_width_literal => SubPattern::zwl_from_pair(pair),
+            Rule::comment_group => SubPattern::comment_group_from_pair(pair),
+            Rule::group => SubPattern::group_from_pair(pair),
+            _ => {
+                println!("single_from_pair actually {:?}", pair.as_rule());
+                Err(ReggieError::unexpected_input(pair).into())
+            }
+        }
+    }
     pub fn as_string(&self) -> String {
         match self {
+            Self::Alternatives(alts) => alts.as_string(),
             Self::Quantifiable {
                 el,
                 quantifier: Some(q),
@@ -108,6 +119,7 @@ impl SubPattern {
     }
     pub fn min_match_len(&self) -> usize {
         match self {
+            Self::Alternatives(alts) => alts.min_match_len(),
             Self::Quantifiable { el, quantifier } => {
                 el.min_match_len() * quantifier.map(|q| q.min_len_multiplier()).unwrap_or(1)
             }
@@ -118,6 +130,7 @@ impl SubPattern {
     }
     pub fn is_finite(&self) -> bool {
         match self {
+            Self::Alternatives(alts) => alts.is_finite(),
             Self::Quantifiable { quantifier, .. } => {
                 quantifier.map(|q| q.is_finite()).unwrap_or(true)
             }
@@ -137,19 +150,28 @@ impl SubPattern {
             match p.as_rule() {
                 Rule::sub_pattern => comps.push(Self::from_pair(p)?),
                 Rule::r_parens => continue,
-                _ => return Err(ReggieError::unexpected_input(p).into()),
+                _ => {
+                    return Err(ReggieError::unexpected_input(p).into());
+                }
             }
         }
         Ok(comps)
     }
 
-    fn quantifiable_from_pair(pair: Pair<Rule>, mut inner: Pairs<'_, Rule>) -> Result<Self> {
+    fn alternatives_from_pair(pair: Pair<Rule>) -> Result<Self> {
+        Ok(Self::Alternatives(Alternatives::from_pair(pair)?))
+    }
+    fn quantifiable_from_pair(pair: Pair<Rule>, inner: &mut Pairs<'_, Rule>) -> Result<Self> {
         let el = Element::from_pair(pair)?;
-        let quantifier = if let Some(p) = inner.next() {
-            Some(Quantifier::from_pair(p)?)
-        } else {
-            None
+
+        let quantifier = {
+            if let Some(Rule::quantifier) = inner.peek().map(|m| m.as_rule()) {
+                Quantifier::from_pair(inner.next().unwrap())?
+            } else {
+                None
+            }
         };
+
         Ok(Self::Quantifiable { el, quantifier })
     }
     fn zwl_from_pair(pair: Pair<Rule>) -> Result<Self> {

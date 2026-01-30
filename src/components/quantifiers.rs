@@ -87,49 +87,56 @@ pub struct Quantifier {
 }
 
 impl Quantifier {
-    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
-        let (_, char_ix) = pair.line_col();
-        let r = pair.as_rule();
-        let ep = pair.clone();
-        let mut pair_inner = pair.into_inner();
-        if let Rule::quantifier = r {
-            let mut quantifier = None;
-            while let Some(q_match) = pair_inner.next() {
-                let q_rule = q_match.as_rule();
-                match q_rule {
-                    Rule::question_mark => {
-                        let _ = quantifier.insert(Quantifier::new(Q::ZeroOrOne));
-                        break;
-                    }
-                    Rule::asterisk => {
-                        let _ = quantifier.insert(Quantifier::new(Q::ZeroOrMore));
-                        break;
-                    }
-                    Rule::plus => {
-                        let _ = quantifier.insert(Quantifier::new(Q::OneOrMore));
-                        break;
-                    }
-                    Rule::l_brace => {
-                        let _ = quantifier
-                            .insert(Quantifier::new(Q::n_from_pair(&mut pair_inner, char_ix)?));
-                        break;
-                    }
-                    Rule::r_brace => break,
-                    _ => return Err(ReggieError::unexpected_input(q_match).into()),
-                }
-            }
-            let mut quantifier = quantifier.ok_or(ReggieError::unexpected_eoi(char_ix))?;
-            while let Some(greed_match) = pair_inner.next() {
-                match greed_match.as_rule() {
-                    Rule::question_mark => quantifier.set_greed(G::NonGreedy),
-                    Rule::plus => quantifier.set_greed(G::Possessive),
-                    Rule::r_brace => continue,
-                    _ => return Err(ReggieError::unexpected_input(greed_match).into()),
-                }
-            }
-            Ok(quantifier)
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Option<Self>> {
+        // this bums me out
+        if pair.as_rule() == Rule::pipe {
+            Ok(None)
         } else {
-            Err(ReggieError::unexpected_input(ep).into())
+            let (_, char_ix) = pair.line_col();
+            let r = pair.as_rule();
+            let ep = pair.clone();
+            let mut pair_inner = pair.into_inner();
+            if let Rule::quantifier = r {
+                let mut quantifier = None;
+                while let Some(q_match) = pair_inner.next() {
+                    let q_rule = q_match.as_rule();
+                    match q_rule {
+                        Rule::question_mark => {
+                            let _ = quantifier.insert(Quantifier::new(Q::ZeroOrOne));
+                            break;
+                        }
+                        Rule::asterisk => {
+                            let _ = quantifier.insert(Quantifier::new(Q::ZeroOrMore));
+                            break;
+                        }
+                        Rule::plus => {
+                            let _ = quantifier.insert(Quantifier::new(Q::OneOrMore));
+                            break;
+                        }
+                        Rule::l_brace => {
+                            let _ = quantifier
+                                .insert(Quantifier::new(Q::n_from_pair(&mut pair_inner, char_ix)?));
+                            break;
+                        }
+                        Rule::r_brace => break,
+                        _ => {
+                            return Err(ReggieError::unexpected_input(q_match).into());
+                        }
+                    }
+                }
+                let mut quantifier = quantifier.ok_or(ReggieError::unexpected_eoi(char_ix))?;
+                while let Some(greed_match) = pair_inner.next() {
+                    match greed_match.as_rule() {
+                        Rule::question_mark => quantifier.set_greed(G::NonGreedy),
+                        Rule::plus => quantifier.set_greed(G::Possessive),
+                        Rule::r_brace => continue,
+                        _ => return Err(ReggieError::unexpected_input(greed_match).into()),
+                    }
+                }
+                Ok(Some(quantifier))
+            } else {
+                Err(ReggieError::unexpected_input(ep).into())
+            }
         }
     }
     pub fn as_string(&self) -> String {
