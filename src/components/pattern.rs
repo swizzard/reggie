@@ -64,6 +64,12 @@ impl Pattern {
     pub fn min_match_len(&self) -> usize {
         self.sub_patterns.iter().map(|sp| sp.min_match_len()).sum()
     }
+    pub(crate) fn sub_patterns_count(&self) -> usize {
+        self.sub_patterns.len()
+    }
+    pub(crate) fn sub_patterns(&self) -> impl std::iter::Iterator<Item = &SubPattern> {
+        self.sub_patterns.iter()
+    }
 }
 
 #[derive(Clone, Debug)]

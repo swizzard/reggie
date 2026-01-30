@@ -1,6 +1,13 @@
-use crate::{components::pattern::SubPattern, parser::Rule};
+use crate::{
+    components::{
+        pattern::SubPattern,
+        traits::{AsComponent, GroupLike},
+    },
+    parser::Rule,
+};
 use anyhow::Result;
 use pest::iterators::Pair;
+use std::fmt::Write;
 
 #[derive(Clone, Debug)]
 pub struct Alternatives(Vec<SubPattern>);
@@ -18,10 +25,24 @@ impl Alternatives {
         }
         Ok(Self(alts))
     }
-    pub fn as_string(&self) -> String {
-        todo!()
+}
+
+impl AsComponent for Alternatives {
+    fn as_string(&self) -> String {
+        let cl = self.0.len();
+        let mut cs = self.0.iter();
+        let mut s = format!("{}|", cs.next().unwrap().as_string());
+        let mut e = cs.enumerate();
+        while let Some((ix, sp)) = e.next() {
+            if ix + 1 >= cl {
+                write!(s, "{}", sp.as_string());
+            } else {
+                write!(s, "{}|", sp.as_string());
+            }
+        }
+        s
     }
-    pub fn min_match_len(&self) -> usize {
+    fn min_match_len(&self) -> usize {
         let mut min = usize::MAX;
         for sp in self.0.iter() {
             let mml = sp.min_match_len();
@@ -31,12 +52,17 @@ impl Alternatives {
         }
         min
     }
-    pub fn is_finite(&self) -> bool {
+    fn is_finite(&self) -> bool {
         for sp in self.0.iter() {
             if !sp.is_finite() {
                 return false;
             }
         }
         true
+    }
+}
+impl GroupLike for Alternatives {
+    fn sub_components(&self) -> Vec<impl AsComponent> {
+        self.0.clone()
     }
 }

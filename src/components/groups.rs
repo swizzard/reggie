@@ -213,6 +213,16 @@ impl Group {
             }
         }
     }
+    pub fn name(&self) -> Option<String> {
+        if let Group::Group { name, .. } = self {
+            name.clone()
+        } else {
+            None
+        }
+    }
+    pub(crate) fn is_indexed(&self) -> bool {
+        matches!(self, Group::Group { ext: None, .. })
+    }
     pub(crate) fn noncapturing_group_from_pairs(
         ext_pair: Pair<Rule>,
         inner: Pairs<'_, Rule>,

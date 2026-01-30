@@ -1,4 +1,8 @@
-use crate::{error::ReggieError, parser::Rule};
+use crate::{
+    components::traits::{AsComponent, GroupLike},
+    error::ReggieError,
+    parser::Rule,
+};
 use anyhow::Result;
 use disjoint_ranges::{DisjointRange, UnaryRange};
 use pest::iterators::Pair;
@@ -74,7 +78,10 @@ impl CharSet {
             unreachable!()
         }
     }
-    pub fn as_string(&self) -> String {
+}
+
+impl AsComponent for CharSet {
+    fn as_string(&self) -> String {
         let mut s = String::from("[");
         for subrange in self.char_ranges.ranges_iter() {
             let (low, high) = subrange.as_bounds();
@@ -83,8 +90,11 @@ impl CharSet {
         s.push_str("]");
         s
     }
-    pub fn min_match_len(&self) -> usize {
+    fn min_match_len(&self) -> usize {
         1
+    }
+    fn is_finite(&self) -> bool {
+        true
     }
 }
 
