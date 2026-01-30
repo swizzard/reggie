@@ -1,8 +1,4 @@
-use crate::{
-    components::traits::{AsComponent, GroupLike},
-    error::ReggieError,
-    parser::Rule,
-};
+use crate::{components::traits::AsComponent, error::ReggieError, parser::Rule};
 use anyhow::Result;
 use disjoint_ranges::{DisjointRange, UnaryRange};
 use pest::iterators::Pair;

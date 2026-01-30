@@ -1,5 +1,9 @@
 use crate::{
-    components::{flags::Flags, pattern::SubPattern},
+    components::{
+        flags::Flags,
+        pattern::SubPattern,
+        traits::{AsComponent, GroupLike},
+    },
     error::ReggieError,
     parser::Rule,
 };
@@ -106,111 +110,6 @@ impl Group {
             Rule::named => Self::named_group_from_pairs(ext_pair, inner),
             Rule::ternary => Self::ternary_group_from_pairs(ext_pair),
             _ => Err(ReggieError::unexpected_input(ext_pair).into()),
-        }
-    }
-    pub fn as_string(&self) -> String {
-        match self {
-            Group::NamedBackref { name } => format!("(?P={})", name),
-            Group::Ternary {
-                group_id,
-                yes_pat,
-                no_pat: None,
-            } => format!("(?({}){})", group_id.as_string(), yes_pat.as_string()),
-            Group::Ternary {
-                group_id,
-                yes_pat,
-                no_pat: Some(no_pat),
-            } => format!(
-                "(?({}){}|{})",
-                group_id.as_string(),
-                yes_pat.as_string(),
-                no_pat.as_string()
-            ),
-            Group::Group {
-                ext: Some(ext),
-                name: None,
-                components: cs,
-                ..
-            } => {
-                let mut s = format!("(?{}", ext.as_string());
-                for component in cs.iter() {
-                    write!(&mut s, "{}", component.as_string()).unwrap();
-                }
-                write!(&mut s, ")").unwrap();
-                s
-            }
-            Group::Group {
-                ext: None,
-                name: Some(name),
-                components: cs,
-                ..
-            } => {
-                let mut s = format!("(?P<{}>", name);
-                for component in cs.iter() {
-                    write!(&mut s, "{}", component.as_string()).unwrap();
-                }
-                write!(&mut s, ")").unwrap();
-                s
-            }
-            Group::Group {
-                ext: None,
-                name: None,
-                ..
-            } => unreachable!(),
-            Group::Group {
-                ext: Some(_),
-                name: Some(_),
-                ..
-            } => unreachable!(),
-        }
-    }
-    pub fn flags(&self) -> Option<Flags> {
-        match self {
-            Self::Group {
-                components, flags, ..
-            } => {
-                if flags.is_empty() {
-                    for comp in components.iter() {
-                        let f = comp.flags();
-                        if f.is_some() {
-                            return f;
-                        }
-                    }
-                    None
-                } else {
-                    Some(flags.clone())
-                }
-            }
-            _ => None,
-        }
-    }
-    pub fn min_match_len(&self) -> usize {
-        //TODO(shr) this isn't quite right
-        match self {
-            Group::NamedBackref { .. } => 0,
-            Group::Ternary { yes_pat, .. } => yes_pat.min_match_len(),
-            Group::Group {
-                ext: Some(GroupExt::NonCapturing),
-                ..
-            } => 0,
-            Group::Group { components, .. } => components.iter().map(|c| c.min_match_len()).sum(),
-        }
-    }
-    pub fn is_finite(&self) -> bool {
-        //TODO(shr) similarly flawed
-        match self {
-            Group::NamedBackref { .. } => true,
-            Group::Ternary {
-                yes_pat, no_pat, ..
-            } => yes_pat.is_finite() && no_pat.as_ref().map_or(true, |p| p.is_finite()),
-            Group::Group { components, .. } => {
-                for c in components.iter() {
-                    if !c.is_finite() {
-                        return false;
-                    }
-                }
-                true
-            }
         }
     }
     pub fn name(&self) -> Option<String> {
@@ -337,6 +236,118 @@ impl Group {
             components,
             flags: Flags::empty(),
         })
+    }
+}
+
+impl AsComponent for Group {
+    fn as_string(&self) -> String {
+        match self {
+            Group::NamedBackref { name } => format!("(?P={})", name),
+            Group::Ternary {
+                group_id,
+                yes_pat,
+                no_pat: None,
+            } => format!("(?({}){})", group_id.as_string(), yes_pat.as_string()),
+            Group::Ternary {
+                group_id,
+                yes_pat,
+                no_pat: Some(no_pat),
+            } => format!(
+                "(?({}){}|{})",
+                group_id.as_string(),
+                yes_pat.as_string(),
+                no_pat.as_string()
+            ),
+            Group::Group {
+                ext: Some(ext),
+                name: None,
+                components: cs,
+                ..
+            } => {
+                let mut s = format!("(?{}", ext.as_string());
+                for component in cs.iter() {
+                    write!(&mut s, "{}", component.as_string()).unwrap();
+                }
+                write!(&mut s, ")").unwrap();
+                s
+            }
+            Group::Group {
+                ext: None,
+                name: Some(name),
+                components: cs,
+                ..
+            } => {
+                let mut s = format!("(?P<{}>", name);
+                for component in cs.iter() {
+                    write!(&mut s, "{}", component.as_string()).unwrap();
+                }
+                write!(&mut s, ")").unwrap();
+                s
+            }
+            Group::Group {
+                ext: None,
+                name: None,
+                ..
+            } => unreachable!(),
+            Group::Group {
+                ext: Some(_),
+                name: Some(_),
+                ..
+            } => unreachable!(),
+        }
+    }
+    fn min_match_len(&self) -> usize {
+        //TODO(shr) this isn't quite right
+        match self {
+            Group::NamedBackref { .. } => 0,
+            Group::Ternary { yes_pat, .. } => yes_pat.min_match_len(),
+            Group::Group {
+                ext: Some(GroupExt::NonCapturing),
+                ..
+            } => 0,
+            Group::Group { components, .. } => components.iter().map(|c| c.min_match_len()).sum(),
+        }
+    }
+    fn is_finite(&self) -> bool {
+        //TODO(shr) similarly flawed
+        match self {
+            Group::NamedBackref { .. } => true,
+            Group::Ternary {
+                yes_pat, no_pat, ..
+            } => yes_pat.is_finite() && no_pat.as_ref().map_or(true, |p| p.is_finite()),
+            Group::Group { components, .. } => {
+                for c in components.iter() {
+                    if !c.is_finite() {
+                        return false;
+                    }
+                }
+                true
+            }
+        }
+    }
+}
+impl GroupLike for Group {
+    fn flags(&self) -> Flags {
+        match self {
+            Self::Group {
+                components, flags, ..
+            } => Some(
+                components
+                    .iter()
+                    .fold(flags, |acc, val| acc.combine(val.flags())),
+            ),
+            _ => None,
+        }
+    }
+    fn indexed(&self) -> bool {
+        matches!(self, Group::Group { ext: None, .. })
+    }
+    fn sub_components(&self) -> Vec<impl AsComponent> {
+        if let Self::Group { components, .. } = self {
+            components.clone()
+        } else {
+            Vec::new()
+        }
     }
 }
 

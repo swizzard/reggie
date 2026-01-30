@@ -1,4 +1,8 @@
-use crate::{components::char_set::CharSet, error::ReggieError, parser::Rule};
+use crate::{
+    components::{char_set::CharSet, traits::AsComponent},
+    error::ReggieError,
+    parser::Rule,
+};
 use anyhow::Result;
 use pest::iterators::Pair;
 #[derive(Clone, Debug)]
@@ -21,17 +25,23 @@ impl Element {
     pub fn literals_from_pair(pair: Pair<Rule>) -> Result<Self> {
         Ok(Self::Literal(Literal::from_pair(pair)?))
     }
-    pub fn as_string(&self) -> String {
+}
+
+impl AsComponent for Element {
+    fn as_string(&self) -> String {
         match self {
             Self::CharSet(cs) => cs.as_string(),
             Self::Literal(l) => l.as_string(),
         }
     }
-    pub fn min_match_len(&self) -> usize {
+    fn min_match_len(&self) -> usize {
         match self {
             Self::CharSet(cs) => cs.min_match_len(),
             Self::Literal(l) => l.min_match_len(),
         }
+    }
+    fn is_finite(&self) -> bool {
+        true
     }
 }
 

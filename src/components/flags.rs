@@ -76,6 +76,15 @@ impl Flags {
         }
         s
     }
+    pub(crate) fn combine(&self, other: Self) -> Self {
+        let new_pos: BTreeSet<Flag> = self.pos.union(&other.pos).cloned().collect();
+        let new_neg = self.neg.union(&other.neg).cloned().collect();
+        let new_pos = new_pos.difference(&new_neg).cloned().collect();
+        Self {
+            pos: new_pos,
+            neg: new_neg,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
