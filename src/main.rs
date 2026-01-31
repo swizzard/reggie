@@ -4,7 +4,7 @@ use pest::iterators::Pair;
 use reggie::*;
 
 pub fn main() {
-    let res = parser::PyRegexParser::parse(parser::Rule::regex, r"(?P<a>a)|[d-z]{3,}?");
+    let res = parser::PyRegexParser::parse(parser::Rule::regex, r"(abc)+");
     // .unwrap()
     // .next()
     // .unwrap();
@@ -12,6 +12,11 @@ pub fn main() {
     let res = res.unwrap().next().unwrap();
     let g = components::Pattern::from_pair(res);
     println!("{:?}", g);
+    // let x = g.unwrap();
+    // let sp = x.sub_patterns.iter().next().unwrap();
+    // println!("{:?}", sp);
+    // let g = g.unwrap().sub_patterns.iter().next();
+    // println!("{:?}", g);
     // let m = components::Pattern::from_pair(res);
     // let m = components::Flags::from_whole_pattern_pair(res);
     // println!("{:?}", m);

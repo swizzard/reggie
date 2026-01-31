@@ -5,6 +5,3 @@ use pest_derive::Parser;
 #[derive(Parser)]
 #[grammar = "pyregex.pest"]
 pub struct PyRegexParser;
-
-// pub static PARSER: LazyLock<PrattParser<Rule>> =
-//     LazyLock::new(|| PrattParser::new().op(Op::infix(Rule::pipe, Assoc::Left)));

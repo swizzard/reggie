@@ -15,6 +15,12 @@ impl Element {
             _ => Err(ReggieError::unexpected_input(pair).into()),
         }
     }
+    pub fn charset_from_pair(pair: Pair<Rule>) -> Result<Self> {
+        Ok(Self::CharSet(CharSet::from_pair(pair)?))
+    }
+    pub fn literals_from_pair(pair: Pair<Rule>) -> Result<Self> {
+        Ok(Self::Literal(Literal::from_pair(pair)?))
+    }
     pub fn as_string(&self) -> String {
         match self {
             Self::CharSet(cs) => cs.as_string(),

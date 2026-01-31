@@ -63,6 +63,17 @@ pub enum Group {
 }
 
 impl Group {
+    pub fn from_pair(pair: Pair<Rule>) -> Result<Self> {
+        let (_, char_ix) = pair.line_col();
+        let mut inner = pair.into_inner();
+        inner.next(); // l_parens
+        let fst = inner.next().ok_or(ReggieError::unexpected_eoi(char_ix))?;
+        match fst.as_rule() {
+            Rule::group_ext => Ok(Group::ext_group_from_pairs(fst, inner)?),
+            Rule::sub_pattern => Ok(Group::plain_group_from_pairs(fst, inner)?),
+            _ => Err(ReggieError::unexpected_input(fst).into()),
+        }
+    }
     pub(crate) fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
         let mut c = vec![SubPattern::from_pair(fst)?];
         for p in inner.into_iter() {

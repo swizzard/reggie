@@ -4,6 +4,7 @@ pub mod element;
 pub mod flags;
 pub mod groups;
 pub mod pattern;
+pub mod quantified;
 pub mod quantifiers;
 
 pub use alternatives::Alternatives;

@@ -101,8 +101,7 @@ alternatives = { single_sub_pattern ~ alt+ }
 single_sub_pattern = _{
     zero_width_literal |
     comment_group |
-    group |
-    ((literals | char_set) ~ quantifier?) |
+    ((group | literals | char_set) ~ quantifier?) |
     backref
 }
 
