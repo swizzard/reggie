@@ -1,9 +1,5 @@
 use crate::{
-    components::{
-        flags::Flags,
-        pattern::SubPattern,
-        traits::{AsComponent, GroupLike},
-    },
+    components::{Component, flags::Flags, pattern::SubPattern},
     error::ReggieError,
     parser::Rule,
 };
@@ -239,7 +235,7 @@ impl Group {
     }
 }
 
-impl AsComponent for Group {
+impl Component for Group {
     fn as_string(&self) -> String {
         match self {
             Group::NamedBackref { name } => format!("(?P={})", name),
@@ -296,17 +292,18 @@ impl AsComponent for Group {
             } => unreachable!(),
         }
     }
-    fn min_match_len(&self) -> usize {
-        //TODO(shr) this isn't quite right
+    fn flags(&self) -> Flags {
         match self {
-            Group::NamedBackref { .. } => 0,
-            Group::Ternary { yes_pat, .. } => yes_pat.min_match_len(),
-            Group::Group {
-                ext: Some(GroupExt::NonCapturing),
-                ..
-            } => 0,
-            Group::Group { components, .. } => components.iter().map(|c| c.min_match_len()).sum(),
+            Self::Group {
+                components, flags, ..
+            } => components
+                .iter()
+                .fold(flags.clone(), |acc, val| acc.combine(val.flags())),
+            _ => Flags::empty(),
         }
+    }
+    fn indexed(&self) -> bool {
+        matches!(self, Group::Group { ext: None, .. })
     }
     fn is_finite(&self) -> bool {
         //TODO(shr) similarly flawed
@@ -325,28 +322,16 @@ impl AsComponent for Group {
             }
         }
     }
-}
-impl GroupLike for Group {
-    fn flags(&self) -> Flags {
+    fn min_match_len(&self) -> usize {
+        //TODO(shr) this isn't quite right
         match self {
-            Self::Group {
-                components, flags, ..
-            } => Some(
-                components
-                    .iter()
-                    .fold(flags, |acc, val| acc.combine(val.flags())),
-            ),
-            _ => None,
-        }
-    }
-    fn indexed(&self) -> bool {
-        matches!(self, Group::Group { ext: None, .. })
-    }
-    fn sub_components(&self) -> Vec<impl AsComponent> {
-        if let Self::Group { components, .. } = self {
-            components.clone()
-        } else {
-            Vec::new()
+            Group::NamedBackref { .. } => 0,
+            Group::Ternary { yes_pat, .. } => yes_pat.min_match_len(),
+            Group::Group {
+                ext: Some(GroupExt::NonCapturing),
+                ..
+            } => 0,
+            Group::Group { components, .. } => components.iter().map(|c| c.min_match_len()).sum(),
         }
     }
 }

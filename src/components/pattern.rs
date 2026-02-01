@@ -1,11 +1,11 @@
 use crate::{
     components::{
+        Component,
         alternatives::Alternatives,
         element::{Element, ZeroWidthLiteral},
         flags::Flags,
         groups::Group,
         quantified::Quantified,
-        traits::{AsComponent, GroupLike},
     },
     error::ReggieError,
     parser::Rule,
@@ -47,7 +47,7 @@ impl Pattern {
     }
 }
 
-impl AsComponent for Pattern {
+impl Component for Pattern {
     fn as_string(&self) -> String {
         let mut s = if self.flags.is_empty() {
             String::new()
@@ -59,6 +59,12 @@ impl AsComponent for Pattern {
         }
         s
     }
+    fn flags(&self) -> Flags {
+        self.flags.clone()
+    }
+    fn indexed(&self) -> bool {
+        true
+    }
     fn is_finite(&self) -> bool {
         for sp in self.sub_patterns.iter() {
             if !sp.is_finite() {
@@ -67,21 +73,8 @@ impl AsComponent for Pattern {
         }
         true
     }
-    // TODO(SHR): fix these
     fn min_match_len(&self) -> usize {
         self.sub_patterns.iter().map(|sp| sp.min_match_len()).sum()
-    }
-}
-
-impl GroupLike for Pattern {
-    fn sub_components(&self) -> Vec<impl AsComponent> {
-        self.sub_patterns.clone()
-    }
-    fn indexed(&self) -> bool {
-        true
-    }
-    fn flags(&self) -> Flags {
-        self.flags.clone()
     }
 }
 
@@ -173,7 +166,7 @@ impl SubPattern {
     }
 }
 
-impl AsComponent for SubPattern {
+impl Component for SubPattern {
     fn as_string(&self) -> String {
         match self {
             Self::Alternatives(alts) => alts.as_string(),
@@ -183,14 +176,11 @@ impl AsComponent for SubPattern {
             Self::Group(g) => g.as_string(),
         }
     }
-    fn min_match_len(&self) -> usize {
-        match self {
-            Self::Alternatives(alts) => alts.min_match_len(),
-            Self::Quantified(quantified) => quantified.min_match_len(),
-            Self::ZeroWidthLiteral(_) => 0,
-            Self::Comment(_) => 0,
-            Self::Group(g) => g.min_match_len(),
-        }
+    fn flags(&self) -> Flags {
+        Flags::empty()
+    }
+    fn indexed(&self) -> bool {
+        false
     }
     fn is_finite(&self) -> bool {
         match self {
@@ -200,28 +190,13 @@ impl AsComponent for SubPattern {
             _ => true,
         }
     }
-}
-
-impl GroupLike for SubPattern {
-    fn sub_components(&self) -> Vec<impl AsComponent> {
-        if let SubPattern::Group(g) = self {
-            g.sub_components()
-        } else {
-            Vec::new()
-        }
-    }
-    fn indexed(&self) -> bool {
-        if let SubPattern::Group(g) = self {
-            g.indexed()
-        } else {
-            false
-        }
-    }
-    fn flags(&self) -> Flags {
-        if let SubPattern::Group(g) = self {
-            g.flags()
-        } else {
-            Flags::empty()
+    fn min_match_len(&self) -> usize {
+        match self {
+            Self::Alternatives(alts) => alts.min_match_len(),
+            Self::Quantified(quantified) => quantified.min_match_len(),
+            Self::ZeroWidthLiteral(_) => 0,
+            Self::Comment(_) => 0,
+            Self::Group(g) => g.min_match_len(),
         }
     }
 }

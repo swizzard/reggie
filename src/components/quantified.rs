@@ -1,5 +1,5 @@
 use crate::{
-    components::{element::Element, groups::Group, quantifiers::Quantifier},
+    components::{Component, Element, Flags, Group, Quantifier},
     error::ReggieError,
     parser::Rule,
 };
@@ -58,18 +58,27 @@ impl Quantified {
             quantifier,
         })
     }
-    pub fn as_string(&self) -> String {
+}
+
+impl Component for Quantified {
+    fn as_string(&self) -> String {
         if let Some(q) = self.quantifier {
             format!("{}{}", self.quantifiable.as_string(), q.as_string())
         } else {
             self.quantifiable.as_string()
         }
     }
-    pub fn min_match_len(&self) -> usize {
+    fn flags(&self) -> Flags {
+        Flags::empty()
+    }
+    fn indexed(&self) -> bool {
+        false
+    }
+    fn min_match_len(&self) -> usize {
         self.quantifiable.min_match_len()
             * self.quantifier.map(|q| q.min_len_multiplier()).unwrap_or(1)
     }
-    pub fn is_finite(&self) -> bool {
+    fn is_finite(&self) -> bool {
         self.quantifier.map(|q| q.is_finite()).unwrap_or(true)
     }
 }

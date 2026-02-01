@@ -1,8 +1,5 @@
 use crate::{
-    components::{
-        pattern::SubPattern,
-        traits::{AsComponent, GroupLike},
-    },
+    components::{Component, Flags, pattern::SubPattern},
     parser::Rule,
 };
 use anyhow::Result;
@@ -27,7 +24,7 @@ impl Alternatives {
     }
 }
 
-impl AsComponent for Alternatives {
+impl Component for Alternatives {
     fn as_string(&self) -> String {
         let cl = self.0.len();
         let mut cs = self.0.iter();
@@ -35,12 +32,26 @@ impl AsComponent for Alternatives {
         let mut e = cs.enumerate();
         while let Some((ix, sp)) = e.next() {
             if ix + 1 >= cl {
-                write!(s, "{}", sp.as_string());
+                write!(s, "{}", sp.as_string()).unwrap();
             } else {
-                write!(s, "{}|", sp.as_string());
+                write!(s, "{}|", sp.as_string()).unwrap();
             }
         }
         s
+    }
+    fn flags(&self) -> Flags {
+        Flags::empty()
+    }
+    fn indexed(&self) -> bool {
+        false
+    }
+    fn is_finite(&self) -> bool {
+        for sp in self.0.iter() {
+            if !sp.is_finite() {
+                return false;
+            }
+        }
+        true
     }
     fn min_match_len(&self) -> usize {
         let mut min = usize::MAX;
@@ -51,18 +62,5 @@ impl AsComponent for Alternatives {
             }
         }
         min
-    }
-    fn is_finite(&self) -> bool {
-        for sp in self.0.iter() {
-            if !sp.is_finite() {
-                return false;
-            }
-        }
-        true
-    }
-}
-impl GroupLike for Alternatives {
-    fn sub_components(&self) -> Vec<impl AsComponent> {
-        self.0.clone()
     }
 }
