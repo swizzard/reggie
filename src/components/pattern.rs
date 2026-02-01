@@ -1,10 +1,6 @@
 use crate::{
     components::{
-        Component,
-        alternatives::Alternatives,
-        element::{Element, ZeroWidthLiteral},
-        flags::Flags,
-        groups::Group,
+        Component, alternatives::Alternatives, element::ZeroWidthLiteral, flags::Flags,
         quantified::Quantified,
     },
     error::ReggieError,
@@ -79,18 +75,11 @@ impl Component for Pattern {
 }
 
 #[derive(Clone, Debug)]
-pub enum Quantifiable {
-    Element(Element),
-    Group(Group),
-}
-
-#[derive(Clone, Debug)]
 pub enum SubPattern {
     Alternatives(Alternatives),
     Quantified(Quantified),
     ZeroWidthLiteral(ZeroWidthLiteral),
     Comment(String),
-    Group(Group),
 }
 
 impl SubPattern {
@@ -118,10 +107,7 @@ impl SubPattern {
         }
     }
     pub fn flags(&self) -> Flags {
-        match self {
-            SubPattern::Group(g) => g.flags(),
-            _ => Flags::empty(),
-        }
+        Flags::empty()
     }
     pub(crate) fn inner_components(inner: Pairs<'_, Rule>) -> Result<Vec<Self>> {
         let mut comps: Vec<Self> = Vec::new();
@@ -155,15 +141,6 @@ impl SubPattern {
             .ok_or(ReggieError::unexpected_eoi(char_ix))?; // (?#
         Ok(Self::Comment(content.as_str().into()))
     }
-    fn group_from_pair(pair: Pair<Rule>) -> Result<Self> {
-        Ok(Self::Group(Group::from_pair(pair)?))
-    }
-    fn ext_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
-        Ok(Self::Group(Group::ext_group_from_pairs(fst, inner)?))
-    }
-    fn plain_group_from_pairs(fst: Pair<Rule>, inner: Pairs<'_, Rule>) -> Result<Self> {
-        Ok(Self::Group(Group::plain_group_from_pairs(fst, inner)?))
-    }
 }
 
 impl Component for SubPattern {
@@ -173,7 +150,6 @@ impl Component for SubPattern {
             Self::Quantified(quantified) => quantified.as_string(),
             Self::ZeroWidthLiteral(zwl) => zwl.as_string(),
             Self::Comment(c) => format!("(?#{})", c),
-            Self::Group(g) => g.as_string(),
         }
     }
     fn flags(&self) -> Flags {
@@ -186,7 +162,6 @@ impl Component for SubPattern {
         match self {
             Self::Alternatives(alts) => alts.is_finite(),
             Self::Quantified(quantified) => quantified.is_finite(),
-            Self::Group(g) => g.is_finite(),
             _ => true,
         }
     }
@@ -196,7 +171,6 @@ impl Component for SubPattern {
             Self::Quantified(quantified) => quantified.min_match_len(),
             Self::ZeroWidthLiteral(_) => 0,
             Self::Comment(_) => 0,
-            Self::Group(g) => g.min_match_len(),
         }
     }
 }
