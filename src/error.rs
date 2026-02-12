@@ -14,6 +14,10 @@ pub enum ReggieError {
     InvalidFlag { bad_flag: char },
     #[error("Invalid literal {bad_literal}")]
     InvalidLiteral { bad_literal: String },
+    #[error("Invalid ranges {bad_ranges:?}")]
+    InvalidRanges { bad_ranges: Vec<(char, char)> },
+    #[error("Invalid character class {bad_cclass}")]
+    InvalidCharClass { bad_cclass: String },
 }
 
 impl ReggieError {

@@ -1,5 +1,7 @@
 use crate::{
-    components::{Component, Element, Flags, Group, Quantifier},
+    components::{
+        CClass, CharSet, Element, Flags, Group, GroupExt, Quantifier, pattern::SubPattern,
+    },
     error::ReggieError,
     parser::Rule,
 };
@@ -13,7 +15,7 @@ pub enum Quantifiable {
 }
 
 impl Quantifiable {
-    fn as_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         match self {
             Quantifiable::Element(e) => e.as_string(),
             Quantifiable::Group(g) => g.as_string(),
@@ -29,8 +31,8 @@ impl Quantifiable {
 
 #[derive(Clone, Debug)]
 pub struct Quantified {
-    quantifiable: Quantifiable,
-    quantifier: Option<Quantifier>,
+    pub(crate) quantifiable: Quantifiable,
+    pub(crate) quantifier: Option<Quantifier>,
 }
 
 impl Quantified {
@@ -58,27 +60,58 @@ impl Quantified {
             quantifier,
         })
     }
-}
-
-impl Component for Quantified {
-    fn as_string(&self) -> String {
+    pub(crate) fn subpatterns_to_group(
+        components: Vec<SubPattern>,
+        flags: Option<Flags>,
+        name: Option<String>,
+        ext: Option<GroupExt>,
+    ) -> Self {
+        Self {
+            quantifier: None,
+            quantifiable: Quantifiable::Group(Group::group_from_subpatterns(
+                components, flags, name, ext,
+            )),
+        }
+    }
+    pub(crate) fn new_char_set_from_ranges(
+        ranges: Vec<(char, char)>,
+        quantifier: Option<Quantifier>,
+    ) -> Result<Self> {
+        Ok(Self {
+            quantifier,
+            quantifiable: Quantifiable::Element(Element::CharSet(CharSet::from_ranges(ranges)?)),
+        })
+    }
+    pub(crate) fn new_char_class(cc: CClass, quantifier: Option<Quantifier>) -> Self {
+        Self {
+            quantifier,
+            quantifiable: Quantifiable::Element(Element::CharSet(CharSet::from_cclass(cc))),
+        }
+    }
+    pub(crate) fn new_literal(lit: String, quantifier: Option<Quantifier>) -> Self {
+        Self {
+            quantifier,
+            quantifiable: Quantifiable::Element(Element::new_literal(lit)),
+        }
+    }
+    pub fn as_string(&self) -> String {
         if let Some(q) = self.quantifier {
             format!("{}{}", self.quantifiable.as_string(), q.as_string())
         } else {
             self.quantifiable.as_string()
         }
     }
-    fn flags(&self) -> Flags {
+    pub fn flags(&self) -> Flags {
         Flags::empty()
     }
-    fn indexed(&self) -> bool {
+    pub fn indexed(&self) -> bool {
         false
     }
-    fn min_match_len(&self) -> usize {
+    pub fn min_match_len(&self) -> usize {
         self.quantifiable.min_match_len()
             * self.quantifier.map(|q| q.min_len_multiplier()).unwrap_or(1)
     }
-    fn is_finite(&self) -> bool {
+    pub fn is_finite(&self) -> bool {
         self.quantifier.map(|q| q.is_finite()).unwrap_or(true)
     }
 }

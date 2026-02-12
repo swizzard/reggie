@@ -83,10 +83,78 @@ impl CharSet {
         s.push_str("]");
         s
     }
+    pub(crate) fn from_ranges(ranges: Vec<(char, char)>) -> Result<Self> {
+        Ok(Self {
+            char_ranges: DisjointRange::from_bounds(ranges.clone())
+                .ok_or(ReggieError::InvalidRanges { bad_ranges: ranges })?,
+        })
+    }
+    pub(crate) fn from_cclass(cclass: CClass) -> Self {
+        Self {
+            char_ranges: cclass.to_char_class().to_range(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CClass {
+pub enum CClass {
+    D,
+    S,
+    W,
+    NegD,
+    NegS,
+    NegW,
+}
+
+impl CClass {
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s.strip_prefix("\\").ok_or(ReggieError::InvalidCharClass {
+            bad_cclass: String::from(s),
+        })? {
+            "d" => Ok(Self::D),
+            "D" => Ok(Self::NegD),
+            "s" => Ok(Self::S),
+            "S" => Ok(Self::NegS),
+            "w" => Ok(Self::W),
+            "W" => Ok(Self::NegW),
+            other => Err(ReggieError::InvalidCharClass {
+                bad_cclass: String::from(other),
+            }
+            .into()),
+        }
+    }
+    pub(crate) fn to_char_class(self) -> CharClass {
+        match self {
+            Self::D => CharClass {
+                class: CC::D,
+                negated: false,
+            },
+            Self::NegD => CharClass {
+                class: CC::D,
+                negated: true,
+            },
+            Self::S => CharClass {
+                class: CC::S,
+                negated: false,
+            },
+            Self::NegS => CharClass {
+                class: CC::S,
+                negated: true,
+            },
+            Self::W => CharClass {
+                class: CC::W,
+                negated: false,
+            },
+            Self::NegW => CharClass {
+                class: CC::W,
+                negated: true,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CC {
     D,
     S,
     W,
@@ -94,16 +162,16 @@ enum CClass {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CharClass {
-    class: CClass,
+    class: CC,
     negated: bool,
 }
 
 impl CharClass {
     pub fn to_range(&self) -> DisjointRange<char> {
         let range = match self.class {
-            CClass::D => CharClass::digit_range(),
-            CClass::S => CharClass::whitespace_range(),
-            CClass::W => CharClass::word_range(),
+            CC::D => CharClass::digit_range(),
+            CC::S => CharClass::whitespace_range(),
+            CC::W => CharClass::word_range(),
         };
         if self.negated {
             range.complement()
@@ -128,36 +196,7 @@ impl CharClass {
             .next()
             .ok_or(ReggieError::unexpected_eoi(char_ix))?
             .as_str();
-        Ok(match c {
-            "d" => Self {
-                class: CClass::D,
-                negated: false,
-            },
-            "D" => Self {
-                class: CClass::D,
-                negated: true,
-            },
-            "s" => Self {
-                class: CClass::S,
-                negated: false,
-            },
-            "S" => Self {
-                class: CClass::S,
-                negated: true,
-            },
-            "w" => Self {
-                class: CClass::W,
-                negated: false,
-            },
-            "W" => Self {
-                class: CClass::W,
-                negated: true,
-            },
-            _ => {
-                println!("c {:?}", c);
-                unreachable!()
-            }
-        })
+        Ok(CClass::from_str(c)?.to_char_class())
     }
 }
 

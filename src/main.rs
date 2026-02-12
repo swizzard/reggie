@@ -10,7 +10,7 @@ pub fn main() {
     // .unwrap();
     // println!("regex {:?}", res);
     let res = res.unwrap().next().unwrap();
-    let g = components::Pattern::from_pair(res);
+    let g = components::Pat::from_pair(res);
     println!("{:?}", g);
     // let x = g.unwrap();
     // let sp = x.sub_patterns.iter().next().unwrap();

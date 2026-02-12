@@ -1,5 +1,5 @@
 use crate::{
-    components::{Component, flags::Flags, pattern::SubPattern},
+    components::{flags::Flags, pattern::SubPattern},
     error::ReggieError,
     parser::Rule,
 };
@@ -17,7 +17,7 @@ pub enum GroupExt {
 }
 
 impl GroupExt {
-    fn as_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         match self {
             Self::NonCapturing => String::from("?:"),
             Self::Atomic => String::from("?>"),
@@ -36,7 +36,7 @@ pub enum TernaryGroupId {
 }
 
 impl TernaryGroupId {
-    fn as_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         match self {
             TernaryGroupId::Numbered(n) => n.to_string(),
             TernaryGroupId::Named(n) => n.clone(),
@@ -113,6 +113,19 @@ impl Group {
             name.clone()
         } else {
             None
+        }
+    }
+    pub(crate) fn group_from_subpatterns(
+        components: Vec<SubPattern>,
+        flags: Option<Flags>,
+        name: Option<String>,
+        ext: Option<GroupExt>,
+    ) -> Self {
+        Self::Group {
+            flags: flags.unwrap_or(Flags::empty()),
+            name,
+            ext,
+            components,
         }
     }
     pub(crate) fn is_indexed(&self) -> bool {
@@ -233,10 +246,7 @@ impl Group {
             flags: Flags::empty(),
         })
     }
-}
-
-impl Component for Group {
-    fn as_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         match self {
             Group::NamedBackref { name } => format!("(?P={})", name),
             Group::Ternary {
@@ -302,10 +312,10 @@ impl Component for Group {
             _ => Flags::empty(),
         }
     }
-    fn indexed(&self) -> bool {
+    pub fn indexed(&self) -> bool {
         matches!(self, Group::Group { ext: None, .. })
     }
-    fn is_finite(&self) -> bool {
+    pub fn is_finite(&self) -> bool {
         //TODO(shr) similarly flawed
         match self {
             Group::NamedBackref { .. } => true,
@@ -322,7 +332,7 @@ impl Component for Group {
             }
         }
     }
-    fn min_match_len(&self) -> usize {
+    pub fn min_match_len(&self) -> usize {
         //TODO(shr) this isn't quite right
         match self {
             Group::NamedBackref { .. } => 0,

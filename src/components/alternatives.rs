@@ -1,5 +1,5 @@
 use crate::{
-    components::{Component, Flags, pattern::SubPattern},
+    components::{Flags, pattern::SubPattern},
     parser::Rule,
 };
 use anyhow::Result;
@@ -22,10 +22,13 @@ impl Alternatives {
         }
         Ok(Self(alts))
     }
-}
-
-impl Component for Alternatives {
-    fn as_string(&self) -> String {
+    pub fn from_l_r(left: SubPattern, right: SubPattern) -> Self {
+        Self(vec![left, right])
+    }
+    pub fn from_components(components: Vec<SubPattern>) -> Self {
+        Self(components)
+    }
+    pub fn as_string(&self) -> String {
         let cl = self.0.len();
         let mut cs = self.0.iter();
         let mut s = format!("{}|", cs.next().unwrap().as_string());
@@ -39,13 +42,13 @@ impl Component for Alternatives {
         }
         s
     }
-    fn flags(&self) -> Flags {
+    pub fn flags(&self) -> Flags {
         Flags::empty()
     }
-    fn indexed(&self) -> bool {
+    pub fn indexed(&self) -> bool {
         false
     }
-    fn is_finite(&self) -> bool {
+    pub fn is_finite(&self) -> bool {
         for sp in self.0.iter() {
             if !sp.is_finite() {
                 return false;
@@ -53,7 +56,7 @@ impl Component for Alternatives {
         }
         true
     }
-    fn min_match_len(&self) -> usize {
+    pub fn min_match_len(&self) -> usize {
         let mut min = usize::MAX;
         for sp in self.0.iter() {
             let mml = sp.min_match_len();

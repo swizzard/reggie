@@ -21,6 +21,9 @@ impl Element {
     pub fn literals_from_pair(pair: Pair<Rule>) -> Result<Self> {
         Ok(Self::Literal(Literal::from_pair(pair)?))
     }
+    pub(crate) fn new_literal(s: String) -> Self {
+        Self::Literal(Literal(s))
+    }
     pub fn as_string(&self) -> String {
         match self {
             Self::CharSet(cs) => cs.as_string(),
