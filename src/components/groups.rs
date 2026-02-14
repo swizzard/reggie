@@ -1,5 +1,9 @@
 use crate::{
-    components::{flags::Flags, pattern::SubPattern},
+    components::{
+        flags::Flags,
+        pattern::{Pattern, SubPattern},
+        quantified::{Quantifiable, Quantified},
+    },
     error::ReggieError,
     parser::Rule,
 };
@@ -128,9 +132,24 @@ impl Group {
             components,
         }
     }
-    pub(crate) fn is_indexed(&self) -> bool {
-        matches!(self, Group::Group { ext: None, .. })
+    pub(crate) fn groups_count(&self) -> usize {
+        match self {
+            Self::Group {
+                ext, components, ..
+            } => {
+                (if ext.is_none() { 1 } else { 0 })
+                    + components
+                        .iter()
+                        .map(SubPattern::groups_count)
+                        .sum::<usize>()
+            }
+            Self::Ternary {
+                yes_pat, no_pat, ..
+            } => yes_pat.groups_count() + no_pat.as_deref().map_or(0, SubPattern::groups_count),
+            _ => 0,
+        }
     }
+
     pub(crate) fn noncapturing_group_from_pairs(
         ext_pair: Pair<Rule>,
         inner: Pairs<'_, Rule>,
@@ -293,27 +312,23 @@ impl Group {
             Group::Group {
                 ext: None,
                 name: None,
+                components,
                 ..
-            } => unreachable!(),
+            } => {
+                let mut s = String::from("(");
+                for component in components.iter() {
+                    write!(&mut s, "{}", component.as_string()).unwrap();
+                }
+                write!(&mut s, ")").unwrap();
+                s
+            }
+
             Group::Group {
                 ext: Some(_),
                 name: Some(_),
                 ..
             } => unreachable!(),
         }
-    }
-    fn flags(&self) -> Flags {
-        match self {
-            Self::Group {
-                components, flags, ..
-            } => components
-                .iter()
-                .fold(flags.clone(), |acc, val| acc.combine(val.flags())),
-            _ => Flags::empty(),
-        }
-    }
-    pub fn indexed(&self) -> bool {
-        matches!(self, Group::Group { ext: None, .. })
     }
     pub fn is_finite(&self) -> bool {
         //TODO(shr) similarly flawed
@@ -342,6 +357,33 @@ impl Group {
                 ..
             } => 0,
             Group::Group { components, .. } => components.iter().map(|c| c.min_match_len()).sum(),
+        }
+    }
+    pub(crate) fn nth_group(&self, mut n: usize) -> Option<Pattern> {
+        if n == 0 {
+            Some(Pattern::Sub(SubPattern::Quantified(Quantified {
+                quantifiable: Quantifiable::Group(self.clone()),
+                quantifier: None,
+            })))
+        } else {
+            match &self {
+                Self::Group {
+                    ext: None,
+                    components,
+                    ..
+                } => {
+                    n -= 1;
+                    let mut cs = components.iter();
+                    while let Some(c) = cs.next() {
+                        let ng = c.nth_group(n);
+                        if ng.is_some() {
+                            return ng;
+                        }
+                    }
+                    None
+                }
+                _ => None,
+            }
         }
     }
 }

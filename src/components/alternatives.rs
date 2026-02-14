@@ -1,5 +1,8 @@
 use crate::{
-    components::{Flags, pattern::SubPattern},
+    components::{
+        Flags,
+        pattern::{Pattern, SubPattern},
+    },
     parser::Rule,
 };
 use anyhow::Result;
@@ -42,12 +45,6 @@ impl Alternatives {
         }
         s
     }
-    pub fn flags(&self) -> Flags {
-        Flags::empty()
-    }
-    pub fn indexed(&self) -> bool {
-        false
-    }
     pub fn is_finite(&self) -> bool {
         for sp in self.0.iter() {
             if !sp.is_finite() {
@@ -65,5 +62,22 @@ impl Alternatives {
             }
         }
         min
+    }
+    pub(crate) fn groups_count(&self) -> usize {
+        self.0.iter().map(SubPattern::groups_count).sum()
+    }
+    pub(crate) fn nth_group(&self, n: usize) -> Option<Pattern> {
+        if n == 0 {
+            Some(Pattern::Sub(SubPattern::Alternatives(self.clone())))
+        } else {
+            let mut sps = self.0.iter();
+            while let Some(sp) = sps.next() {
+                let ng = sp.nth_group(n);
+                if ng.is_some() {
+                    return ng;
+                }
+            }
+            None
+        }
     }
 }

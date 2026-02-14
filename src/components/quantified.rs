@@ -1,6 +1,8 @@
 use crate::{
     components::{
-        CClass, CharSet, Element, Flags, Group, GroupExt, Quantifier, pattern::SubPattern,
+        CClass, CharSet, Element, Flags, Group, GroupExt, Quantifier,
+        flags::Flag,
+        pattern::{Pattern, SubPattern},
     },
     error::ReggieError,
     parser::Rule,
@@ -104,14 +106,50 @@ impl Quantified {
     pub fn flags(&self) -> Flags {
         Flags::empty()
     }
-    pub fn indexed(&self) -> bool {
-        false
-    }
     pub fn min_match_len(&self) -> usize {
         self.quantifiable.min_match_len()
             * self.quantifier.map(|q| q.min_len_multiplier()).unwrap_or(1)
     }
     pub fn is_finite(&self) -> bool {
         self.quantifier.map(|q| q.is_finite()).unwrap_or(true)
+    }
+    pub(crate) fn without_flag(&self, flag: Flag) -> Self {
+        if let Quantifiable::Group(Group::Group {
+            ext,
+            flags,
+            name,
+            components,
+        }) = &self.quantifiable
+        {
+            let new_flags = flags.remove_flag(flag);
+            Self {
+                quantifiable: Quantifiable::Group(Group::Group {
+                    ext: ext.clone(),
+                    flags: new_flags,
+                    name: name.clone(),
+                    components: components.clone(),
+                }),
+                quantifier: self.quantifier.clone(),
+            }
+        } else {
+            self.clone()
+        }
+    }
+
+    pub(crate) fn groups_count(&self) -> usize {
+        match &self.quantifiable {
+            Quantifiable::Element(_) => 0,
+            Quantifiable::Group(g) => g.groups_count(),
+        }
+    }
+    pub(crate) fn nth_group(&self, n: usize) -> Option<Pattern> {
+        if n == 0 {
+            Some(Pattern::Sub(SubPattern::Quantified(self.clone())))
+        } else {
+            match &self.quantifiable {
+                Quantifiable::Element(_) => None,
+                Quantifiable::Group(g) => g.nth_group(n),
+            }
+        }
     }
 }

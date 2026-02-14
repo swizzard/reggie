@@ -23,6 +23,9 @@ impl Flags {
     pub fn is_empty(&self) -> bool {
         self.pos.is_empty() && self.neg.is_empty()
     }
+    pub(crate) fn has_neg(&self) -> bool {
+        !self.neg.is_empty()
+    }
 
     pub(crate) fn from_pair(pair: Pair<Rule>) -> Result<Self> {
         let mut pos = BTreeSet::new();
@@ -76,7 +79,22 @@ impl Flags {
         }
         s
     }
-    pub(crate) fn combine(&self, other: Self) -> Self {
+    pub(crate) fn new_single(f: Flag) -> Self {
+        let pos = BTreeSet::from([f]);
+        let neg = BTreeSet::new();
+        Self { pos, neg }
+    }
+    pub fn add_flag(&self, f: Flag) -> Self {
+        let mut new = self.clone();
+        new.pos.insert(f);
+        new
+    }
+    pub fn remove_flag(&self, f: Flag) -> Self {
+        let mut new = self.clone();
+        new.pos.remove(&f);
+        new
+    }
+    pub fn combine(&self, other: &Self) -> Self {
         let new_pos: BTreeSet<Flag> = self.pos.union(&other.pos).cloned().collect();
         let new_neg = self.neg.union(&other.neg).cloned().collect();
         let new_pos = new_pos.difference(&new_neg).cloned().collect();

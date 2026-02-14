@@ -18,6 +18,8 @@ pub enum ReggieError {
     InvalidRanges { bad_ranges: Vec<(char, char)> },
     #[error("Invalid character class {bad_cclass}")]
     InvalidCharClass { bad_cclass: String },
+    #[error("Pattern flags must be positive")]
+    NegativePatternFlags,
 }
 
 impl ReggieError {

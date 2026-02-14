@@ -1,13 +1,18 @@
 use crate::{
     components::{
-        CClass, Quantifier, alternatives::Alternatives, element::ZeroWidthLiteral, flags::Flags,
-        groups::GroupExt, quantified::Quantified,
+        CClass, Quantifier,
+        alternatives::Alternatives,
+        element::ZeroWidthLiteral,
+        flags::{Flag, Flags},
+        groups::GroupExt,
+        quantified::Quantified,
     },
     error::ReggieError,
     parser::Rule,
 };
 use anyhow::Result;
 use pest::iterators::{Pair, Pairs};
+use std::fmt::Write;
 
 #[derive(Clone, Debug)]
 pub enum Pattern {
@@ -32,16 +37,19 @@ impl Pattern {
             ext,
         ))
     }
-    pub fn new_char_set(ranges: Vec<(char, char)>, quantifier: Option<Quantifier>) -> Result<Self> {
+    pub fn new_character_set(
+        ranges: Vec<(char, char)>,
+        quantifier: Option<Quantifier>,
+    ) -> Result<Self> {
         Ok(Self::Sub(SubPattern::new_char_set(ranges, quantifier)?))
     }
-    pub fn new_char_class(cc: CClass, quantifier: Option<Quantifier>) -> Self {
+    pub fn new_character_class(cc: CClass, quantifier: Option<Quantifier>) -> Self {
         Self::Sub(SubPattern::new_char_class(cc, quantifier))
     }
     pub fn new_literal(lit: String, quantifier: Option<Quantifier>) -> Self {
         Self::Sub(SubPattern::new_literal(lit, quantifier))
     }
-    pub fn new_alts(components: Vec<Self>) -> Self {
+    pub fn new_alternatives(components: Vec<Self>) -> Self {
         Self::Sub(SubPattern::new_alternatives(
             components.iter().map(Pattern::into_subpattern).collect(),
         ))
@@ -60,12 +68,6 @@ impl Pattern {
             Self::Sub(sp) => Self::Sub(sp.as_group()),
         }
     }
-    fn into_subpattern(&self) -> SubPattern {
-        let Self::Sub(s) = self.into_group() else {
-            unreachable!()
-        };
-        s
-    }
     pub fn quantify(&self, quantifier: Quantifier) -> Self {
         if let SubPattern::Quantified(mut q) = self.into_subpattern() {
             q.quantifier = Some(quantifier);
@@ -74,10 +76,109 @@ impl Pattern {
             unreachable!()
         }
     }
-    pub fn alternate(&self, other: &Self) -> Self {
+    pub fn alternate_with(&self, other: &Self) -> Self {
         let l = self.into_subpattern();
         let r = other.into_subpattern();
         Self::Sub(SubPattern::new_alternatives(vec![l, r]))
+    }
+    pub fn follow_with(&self, other: &Self) -> Self {
+        Self::new_group(vec![self.clone(), other.clone()], None, None, None)
+    }
+    pub fn with_flags(&self, flags: Flags) -> Result<Self> {
+        if flags.has_neg() {
+            Err(ReggieError::NegativePatternFlags.into())
+        } else {
+            Ok(match self {
+                Self::Sub(sp) => Self::Pat(Pat {
+                    flags,
+                    sub_patterns: vec![sp.clone()],
+                }),
+                Self::Pat(Pat { sub_patterns, .. }) => Self::Pat(Pat {
+                    flags,
+                    sub_patterns: sub_patterns.clone(),
+                }),
+            })
+        }
+    }
+    pub fn with_flag(&self, flag: Flag) -> Self {
+        match self {
+            Self::Sub(sp) => Self::Pat(Pat {
+                flags: Flags::new_single(flag),
+                sub_patterns: vec![sp.clone()],
+            }),
+            Self::Pat(Pat {
+                flags,
+                sub_patterns,
+            }) => {
+                let new_flags = flags.add_flag(flag);
+                Self::Pat(Pat {
+                    flags: new_flags,
+                    sub_patterns: sub_patterns.clone(),
+                })
+            }
+        }
+    }
+    pub fn without_flag(&self, flag: Flag) -> Self {
+        match self {
+            Self::Sub(sp) => sp.without_flag(flag),
+            Self::Pat(p) => p.without_flag(flag),
+        }
+    }
+    pub fn as_string(&self) -> String {
+        match self {
+            Self::Pat(p) => p.as_string(),
+            Self::Sub(sp) => sp.as_string(),
+        }
+    }
+    pub fn min_match_len(&self) -> usize {
+        match self {
+            Self::Pat(p) => p.min_match_len(),
+            Self::Sub(s) => s.min_match_len(),
+        }
+    }
+    pub fn is_finite(&self) -> bool {
+        match &self {
+            Self::Sub(sp) => sp.is_finite(),
+            Self::Pat(p) => p.is_finite(),
+        }
+    }
+    pub fn groups_count(&self) -> usize {
+        match self {
+            Self::Pat(Pat { sub_patterns, .. }) => {
+                sub_patterns.iter().map(SubPattern::groups_count).sum()
+            }
+            Self::Sub(sp) => sp.groups_count(),
+        }
+    }
+    pub fn flags(&self) -> Option<Flags> {
+        match &self {
+            Self::Pat(Pat { flags, .. }) => Some(flags.clone()),
+            Self::Sub(_) => None,
+        }
+    }
+    pub fn nth_group(&self, n: usize) -> Option<Self> {
+        if n == 0 {
+            Some(self.clone())
+        } else {
+            match self {
+                Self::Pat(p) => p.nth_group(n),
+                Self::Sub(s) => s.nth_group(n),
+            }
+        }
+    }
+    pub fn components(&self) -> Vec<Self> {
+        match &self {
+            Self::Sub(_) => vec![self.clone()],
+            Self::Pat(Pat { sub_patterns, .. }) => {
+                sub_patterns.iter().map(SubPattern::as_pattern).collect()
+            }
+        }
+    }
+    fn into_subpattern(&self) -> SubPattern {
+        let Self::Sub(s) = self.into_group() else {
+            unreachable!()
+        };
+        s
     }
 }
 
@@ -107,12 +208,22 @@ impl Pat {
             sub_patterns,
         })
     }
-    pub(crate) fn sub_patterns_count(&self) -> usize {
-        self.sub_patterns.len()
+    fn nth_group(&self, n: usize) -> Option<Pattern> {
+        if n == 0 {
+            Some(Pattern::Pat(self.clone()))
+        } else {
+            let i = n;
+            let mut sps = self.sub_patterns.iter();
+            while let Some(sp) = sps.next() {
+                let ng = sp.nth_group(i);
+                if ng.is_some() {
+                    return ng;
+                }
+            }
+            None
+        }
     }
-    pub(crate) fn sub_patterns(&self) -> impl std::iter::Iterator<Item = &SubPattern> {
-        self.sub_patterns.iter()
-    }
+
     fn as_string(&self) -> String {
         let mut s = if self.flags.is_empty() {
             String::new()
@@ -120,15 +231,9 @@ impl Pat {
             format!("({})", self.flags.as_string())
         };
         for sp in self.sub_patterns.iter() {
-            s.push_str(sp.as_string().as_str())
+            write!(&mut s, "{}", sp.as_string()).unwrap();
         }
         s
-    }
-    fn flags(&self) -> Flags {
-        self.flags.clone()
-    }
-    fn indexed(&self) -> bool {
-        true
     }
     fn is_finite(&self) -> bool {
         for sp in self.sub_patterns.iter() {
@@ -140,6 +245,12 @@ impl Pat {
     }
     fn min_match_len(&self) -> usize {
         self.sub_patterns.iter().map(|sp| sp.min_match_len()).sum()
+    }
+    fn without_flag(&self, flag: Flag) -> Pattern {
+        let mut new = self.clone();
+        let new_flags = new.flags.remove_flag(flag);
+        new.flags = new_flags;
+        Pattern::Pat(new)
     }
 }
 
@@ -210,6 +321,13 @@ impl SubPattern {
     pub fn flags(&self) -> Flags {
         Flags::empty()
     }
+    pub fn groups_count(&self) -> usize {
+        match self {
+            Self::ZeroWidthLiteral(_) | Self::Comment(_) => 0,
+            Self::Alternatives(alts) => alts.groups_count(),
+            Self::Quantified(q) => q.groups_count(),
+        }
+    }
     pub(crate) fn inner_components(inner: Pairs<'_, Rule>) -> Result<Vec<Self>> {
         let mut comps: Vec<Self> = Vec::new();
         for p in inner {
@@ -250,8 +368,16 @@ impl SubPattern {
             Self::Comment(c) => format!("(?#{})", c),
         }
     }
-    pub fn indexed(&self) -> bool {
-        false
+    pub(crate) fn nth_group(&self, n: usize) -> Option<Pattern> {
+        if n == 0 {
+            Some(Pattern::Sub(self.clone()))
+        } else {
+            match self {
+                Self::Alternatives(alts) => alts.nth_group(n),
+                Self::Quantified(q) => q.nth_group(n),
+                _ => None,
+            }
+        }
     }
     pub fn is_finite(&self) -> bool {
         match self {
@@ -267,5 +393,15 @@ impl SubPattern {
             Self::ZeroWidthLiteral(_) => 0,
             Self::Comment(_) => 0,
         }
+    }
+    fn without_flag(&self, flag: Flag) -> Pattern {
+        match self {
+            Self::Quantified(q) => Pattern::Sub(Self::Quantified(q.without_flag(flag))),
+            other => Pattern::Sub(self.clone()),
+        }
+    }
+
+    fn as_pattern(&self) -> Pattern {
+        Pattern::Sub(self.clone())
     }
 }
